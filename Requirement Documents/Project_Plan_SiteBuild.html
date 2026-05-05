@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Alorica Site Build – Technical Implementation Plan v1.1</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+
+    .cover {
+      background: linear-gradient(135deg, #0f1e35 0%, #1a3a5c 100%);
+      color: #fff; padding: 60px 80px; min-height: 220px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .cover-left h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+    .cover-left h2 { font-size: 18px; font-weight: 400; color: #a8c4e0; margin-bottom: 20px; }
+    .cover-meta { font-size: 13px; color: #c5d8ec; line-height: 1.8; }
+    .cover-meta span { color: #fff; font-weight: 600; }
+    .cover-badge { background: #e03a3a; color: #fff; padding: 10px 24px; border-radius: 4px; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 40px 40px; }
+    .section-title { font-size: 18px; font-weight: 700; color: #0f1e35; border-left: 4px solid #e03a3a; padding-left: 12px; margin: 40px 0 16px; }
+
+    .card { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .card-alert { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 20px 24px; margin-bottom: 20px; }
+    .card-alert h4 { color: #92400e; font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+    .card-alert li { color: #78350f; font-size: 13px; line-height: 1.8; margin-left: 16px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+
+    .chip-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .chip { background: #eaf0fb; color: #1a3a5c; border-radius: 20px; padding: 5px 14px; font-size: 13px; font-weight: 600; border: 1px solid #c2d4ed; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #0f1e35; color: #fff; padding: 10px 12px; text-align: left; font-weight: 600; }
+    td { padding: 9px 12px; border-bottom: 1px solid #eceff5; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:nth-child(even) td { background: #f9fafb; }
+    .td-bold { font-weight: 600; color: #0f1e35; }
+    code { background: #eef2ff; color: #4338ca; padding: 1px 6px; border-radius: 3px; font-size: 12px; font-family: monospace; }
+
+    .phase-list { list-style: none; }
+    .phase-item { display: flex; gap: 16px; margin-bottom: 20px; align-items: flex-start; }
+    .phase-num { min-width: 36px; height: 36px; background: #e03a3a; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+    .phase-body h4 { font-size: 14px; font-weight: 700; color: #0f1e35; margin-bottom: 4px; }
+    .phase-body p { font-size: 13px; color: #555; line-height: 1.6; }
+    .phase-body ul { margin-top: 6px; padding-left: 16px; }
+    .phase-body ul li { font-size: 13px; color: #555; margin-bottom: 3px; }
+
+    .module-card { background: #fff; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-top: 3px solid #e03a3a; }
+    .module-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; color: #0f1e35; }
+    .module-card p, .module-card li { font-size: 13px; color: #555; line-height: 1.6; }
+    .module-card ul { padding-left: 16px; }
+
+    .workflow { display: flex; flex-direction: column; }
+    .wf-step { display: flex; align-items: flex-start; gap: 14px; }
+    .wf-line-wrap { display: flex; flex-direction: column; align-items: center; }
+    .wf-dot { width: 12px; height: 12px; border-radius: 50%; background: #e03a3a; flex-shrink: 0; margin-top: 4px; }
+    .wf-line { width: 2px; background: #dde3ee; flex: 1; min-height: 24px; }
+    .wf-text { padding-bottom: 18px; }
+    .wf-text strong { display: block; font-size: 13px; font-weight: 700; color: #0f1e35; }
+    .wf-text span { font-size: 12px; color: #777; }
+
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badge-blue { background: #dbeafe; color: #1e40af; }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-red { background: #fee2e2; color: #991b1b; }
+    .badge-orange { background: #ffedd5; color: #9a3412; }
+    .badge-yellow { background: #fef9c3; color: #854d0e; }
+
+    pre { background: #1e2a3a; color: #a8d8f0; border-radius: 6px; padding: 16px 20px; font-size: 12px; line-height: 1.6; overflow-x: auto; margin-top: 10px; }
+
+    .sidebar-box { background: #0f1e35; color: #c8d8ea; border-radius: 8px; padding: 16px 20px; font-family: monospace; font-size: 12px; line-height: 1.8; }
+    .sidebar-box .active { color: #60b3ff; font-weight: 700; }
+    .sidebar-box .section { color: #fff; font-weight: 700; }
+    .sidebar-box .indent1 { padding-left: 16px; }
+    .sidebar-box .indent2 { padding-left: 32px; }
+    .sidebar-box .indent3 { padding-left: 48px; }
+    .sidebar-box .dim { color: #4a6580; }
+
+    .footer { background: #0f1e35; color: #7f9bb5; text-align: center; padding: 24px; font-size: 12px; margin-top: 60px; }
+
+    .revision-tag { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+
+    @media print {
+      body { background: #fff; }
+      .cover, th, .phase-num { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="cover-left">
+    <h1>Alorica Site Build Application</h1>
+    <h2>Technical Implementation Plan</h2>
+    <div class="cover-meta">
+      <div><span>Application:</span> OutSystems Site Build → Next.js Rebuild</div>
+      <div><span>Document Version:</span> 1.1 &nbsp;|&nbsp; May 2026</div>
+      <div><span>Prepared for:</span> Alorica Leadership Review</div>
+      <div><span>Technology Stack:</span> Next.js · PostgreSQL · Azure SSO</div>
+    </div>
+  </div>
+  <div>
+    <div class="cover-badge" style="margin-bottom:10px;">Implementation Plan</div>
+    <div style="background:#f59e0b; color:#fff; padding:6px 14px; border-radius:4px; font-size:11px; font-weight:700; text-align:center; margin-top:8px;">v1.1 — Plan Updated</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- REVISION NOTICE -->
+  <div class="card-alert" style="margin-top:30px;">
+    <h4>Plan Revision v1.1 — Corrections Applied After Live App Reference Review</h4>
+    <ul>
+      <li><strong>Navigation:</strong> Sidebar is context-sensitive (3 distinct states); "Milestone Tracking" is a separate menu item under Dashboard, not just a project click</li>
+      <li><strong>Two distinct Milestone views:</strong> (1) Read-only Milestone Tracking with visual 8-step timeline — accessed from Executive Dashboard; (2) Editable Milestone Forms per phase — accessed from Project Requests → Milestones button</li>
+      <li><strong>Milestone routes:</strong> Split into <code>/milestone-tracking/[id]</code> (read-only) and <code>/projects/[id]/milestones/phase-[2|3|4|5]</code> (editable forms)</li>
+      <li><strong>IT Summary:</strong> Has 3 separate Lead Approver rows — Infrastructure, EOS, and Capital Labor — each with own status</li>
+      <li><strong>Leadership notifications:</strong> Sent to ALL users with the leadership role (multiple recipients), not a single person</li>
+      <li><strong>Project Requests:</strong> Added "Assigned to me" toggle button + pagination</li>
+      <li><strong>CapEx form locking:</strong> After any approver (RC / VP / EC) submits, the CapEx form locks globally — only Comments and Summary remain editable</li>
+      <li><strong>EC approval budget threshold:</strong> EC section only appears when Grand Total &gt; $25,000</li>
+      <li><strong>CapEx ID format:</strong> Confirmed as <code>Proj-CapExId_XXXX</code> from manual screenshot</li>
+    </ul>
+  </div>
+
+  <!-- 1. EXECUTIVE SUMMARY -->
+  <div class="section-title">1. Executive Summary</div>
+  <div class="card">
+    <p style="line-height:1.8; color:#444;">
+      This document outlines the technical plan to rebuild Alorica's OutSystems Site Build application using
+      modern web technologies — <strong>Next.js 14</strong> (React-based full-stack framework),
+      <strong>PostgreSQL</strong> database, and <strong>Azure Single Sign-On</strong> authentication.
+      The application manages the end-to-end Capital Expenditure (CapEx) approval workflow and
+      milestone tracking for Alorica site build projects, covering 17 user roles, a multi-stage
+      approval chain, automated email notifications, and real-time project dashboards.
+    </p>
+    <br/>
+    <div class="grid-3">
+      <div style="text-align:center; padding: 16px; background:#f0f4ff; border-radius:8px;">
+        <div style="font-size:28px; font-weight:800; color:#0f1e35;">17</div>
+        <div style="font-size:12px; color:#666; margin-top:4px;">User Roles</div>
+      </div>
+      <div style="text-align:center; padding: 16px; background:#f0f4ff; border-radius:8px;">
+        <div style="font-size:28px; font-weight:800; color:#0f1e35;">9</div>
+        <div style="font-size:12px; color:#666; margin-top:4px;">Application Modules</div>
+      </div>
+      <div style="text-align:center; padding: 16px; background:#f0f4ff; border-radius:8px;">
+        <div style="font-size:28px; font-weight:800; color:#0f1e35;">14</div>
+        <div style="font-size:12px; color:#666; margin-top:4px;">Email Notification Types</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. TECH STACK -->
+  <div class="section-title">2. Technology Stack</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Layer</th><th>Technology</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td class="td-bold">Frontend Framework</td><td>Next.js 14 (App Router, TypeScript)</td><td>Full-stack React — UI + API routes in one codebase</td></tr>
+        <tr><td class="td-bold">Styling</td><td>Tailwind CSS + shadcn/ui</td><td>Utility-first CSS matching Alorica dark navy design system</td></tr>
+        <tr><td class="td-bold">Database</td><td>PostgreSQL</td><td>Relational database for all application data</td></tr>
+        <tr><td class="td-bold">ORM</td><td>Prisma</td><td>Type-safe database access with schema migrations</td></tr>
+        <tr><td class="td-bold">Authentication</td><td>NextAuth.js v5 + Azure AD</td><td>SSO via Alorica's Azure Directory Group (per manual requirement)</td></tr>
+        <tr><td class="td-bold">Email</td><td>Nodemailer (SMTP)</td><td>Automated workflow notifications via corporate SMTP</td></tr>
+        <tr><td class="td-bold">File Storage</td><td>Local disk (<code>/public/uploads</code>)</td><td>Document &amp; screenshot uploads for milestones and CapEx</td></tr>
+        <tr><td class="td-bold">SLA Monitoring</td><td>node-cron</td><td>Daily automated check for overdue milestones → reminder emails</td></tr>
+        <tr><td class="td-bold">ServiceNow</td><td>Mock layer (swappable)</td><td>Simulates ServiceNow project API; replaceable with real credentials</td></tr>
+      </tbody>
+    </table>
+    <div class="chip-row">
+      <span class="chip">Next.js 14</span><span class="chip">TypeScript</span><span class="chip">PostgreSQL</span>
+      <span class="chip">Prisma ORM</span><span class="chip">NextAuth.js</span><span class="chip">Azure AD SSO</span>
+      <span class="chip">Tailwind CSS</span><span class="chip">shadcn/ui</span><span class="chip">Nodemailer</span><span class="chip">node-cron</span>
+    </div>
+  </div>
+
+  <!-- 3. SIDEBAR NAVIGATION -->
+  <div class="section-title">3. Sidebar Navigation — Context-Sensitive Design <span class="revision-tag">UPDATED v1.1</span></div>
+  <div class="card">
+    <p style="margin-bottom:16px; color:#555;">The sidebar dynamically changes based on the user's current context. It has 3 distinct states:</p>
+    <div class="grid-3">
+      <div>
+        <p style="font-size:12px; font-weight:700; color:#0f1e35; margin-bottom:8px;">State 1 — Default</p>
+        <div class="sidebar-box">
+          <div class="section">Dashboard ∧</div>
+          <div class="indent1">Executive</div>
+          <div class="indent1">Milestone Tracking</div>
+          <div class="section" style="margin-top:6px;">Project Requests</div>
+          <div class="dim" style="margin-top:12px; font-size:11px;">─────────────────</div>
+          <div style="margin-top:6px; font-size:11px;">👤 User Name</div>
+          <div style="font-size:11px;">(Role Name)</div>
+        </div>
+      </div>
+      <div>
+        <p style="font-size:12px; font-weight:700; color:#0f1e35; margin-bottom:8px;">State 2 — Inside a Project</p>
+        <div class="sidebar-box">
+          <div class="section">Dashboard ∧</div>
+          <div class="indent1 dim">Executive</div>
+          <div class="indent1 dim">Milestone Tracking</div>
+          <div class="section" style="margin-top:4px;">Project Requests</div>
+          <div class="section" style="margin-top:4px;">Project Mgmt (PRJ#) ∧</div>
+          <div class="indent1">CapEx Form ∧</div>
+          <div class="indent2">Request Details</div>
+          <div class="indent2">CapEx Types &amp; BPM</div>
+          <div class="indent2">Func. Org ∧</div>
+          <div class="indent3">IT / Facilities / Security / Total</div>
+          <div class="indent2">Finance Review</div>
+          <div class="indent2">Amendments</div>
+          <div class="indent1" style="margin-top:4px;">Milestone ∧</div>
+          <div class="indent2">Phase 2 | Planning</div>
+          <div class="indent2">Phase 3 | Design</div>
+          <div class="indent2">Phase 4 | Impl.</div>
+          <div class="indent2">Phase 5 | SiteReady</div>
+        </div>
+      </div>
+      <div>
+        <p style="font-size:12px; font-weight:700; color:#0f1e35; margin-bottom:8px;">State 3 — Milestone Tracking View</p>
+        <div class="sidebar-box">
+          <div class="section">Dashboard ∧</div>
+          <div class="indent1 dim">Executive</div>
+          <div class="indent1 active">Milestone Tracking ← active</div>
+          <div class="section" style="margin-top:6px;">Project Requests</div>
+          <div class="dim" style="margin-top:12px; font-size:11px;">─────────────────</div>
+          <div style="margin-top:6px; font-size:11px;">👤 User Name</div>
+          <div style="font-size:11px;">(Role Name)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. APPLICATION MODULES -->
+  <div class="section-title">4. Application Modules</div>
+  <div class="grid-2">
+    <div class="module-card">
+      <h4>Module 1 — Executive Dashboard</h4>
+      <ul>
+        <li>5-column Kanban: Initiation → Planning &amp; Approval → Design &amp; Order → Implementation → Site Ready</li>
+        <li>Project cards: status badge, risk badge, progress bar, owner, date range</li>
+        <li>Filters: Region, Country, Location, Classification, Status + Clear All</li>
+        <li>Search by Project Name / PRJ Number</li>
+        <li>Click project card → navigates to Milestone Tracking (read-only view)</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h4>Module 2 — Milestone Tracking (Read-Only) <span class="revision-tag">UPDATED</span></h4>
+      <ul>
+        <li>Accessed from Executive Dashboard (click project) or Dashboard → Milestone Tracking menu</li>
+        <li><strong>Visual 8-step timeline</strong> at top with numbered circles + dates</li>
+        <li>8 milestones: Project Created → CapEx Approval → CapEx ID Created → Facility Work → IT Orders → IT Deployment → Client PCs → IT Handover</li>
+        <li>Phase progress bars (5 phases) with On Time / Delayed badges + date ranges</li>
+        <li>Milestone list grouped by phase — planned vs actual, completion status</li>
+        <li>Google Maps link for project location</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h4>Module 3 — Project Requests <span class="revision-tag">UPDATED</span></h4>
+      <ul>
+        <li>Full project list table: PRJ#, Name, PM, Business Owner, Status, Go-Live Date</li>
+        <li>Role-based visibility (users see only projects assigned to them)</li>
+        <li>Pending projects greyed-out; In Progress projects actionable</li>
+        <li>Action buttons per row: <strong>Milestones</strong> + <strong>CapEx Form</strong></li>
+        <li><strong>"Assigned to me" toggle button</strong> for quick personal filter</li>
+        <li>Full filter bar + pagination</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h4>Module 4 — CapEx Form (Multi-Section)</h4>
+      <ul>
+        <li>Request Details — project info, classification, dates, justification</li>
+        <li>CapEx Types &amp; BPM — assign IT/Facilities/Security managers + ROI</li>
+        <li>IT Summary — 3 cost lines + <strong>3 separate lead approvers</strong> (Infrastructure / EOS / Capital Labor)</li>
+        <li>Facilities Summary — 4 cost lines + TIA + Net TIA + Lease Info</li>
+        <li>Security Summary — Physical Security total + lead approver</li>
+        <li>Grand Total — auto-calculated rollup across all 3 sections</li>
+        <li>Finance Review — RC Finance → VP Finance → EC approval chain</li>
+        <li>CapEx ID generation + Related CapEx linking</li>
+        <li>Amendments — post-approval budget revisions</li>
+        <li><strong>Form locks globally after first approver submits</strong></li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h4>Module 5 — Milestone Forms (Editable) <span class="revision-tag">UPDATED</span></h4>
+      <ul>
+        <li>Accessed from Project Requests → Milestones button</li>
+        <li>4 phase pages: Phase 2 / 3 / 4 / 5 (Phase 1 = read-only from ServiceNow)</li>
+        <li>Each phase: accordion of milestones for that phase</li>
+        <li>Per-milestone editable form: Owner, Status, Assigned Date, Completed Date, Remarks, Document Upload, Site Progress Images</li>
+        <li>Functional Manager assigns owner → email to assigned user</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h4>Module 6 — Email Notifications</h4>
+      <ul>
+        <li>14 distinct email templates for each workflow event</li>
+        <li>Branded Alorica HTML templates</li>
+        <li>Leadership emails go to <strong>all users</strong> with that leadership role</li>
+        <li>EC approval emails contain deep-link Approve/Reject buttons</li>
+        <li>Daily SLA cron — reminds users of overdue milestones</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h4>Module 7 — EC Approval Page (Public)</h4>
+      <ul>
+        <li>Token-based public URL (no login needed)</li>
+        <li>Displays full project summary + Grand Total table</li>
+        <li>Approve / Reject buttons → confirmation + optional comment</li>
+        <li>Only triggered when Grand Total &gt; $25,000</li>
+      </ul>
+    </div>
+    <div class="module-card">
+      <h4>Module 8 — Admin Panel</h4>
+      <ul>
+        <li>User List — all users with search</li>
+        <li>Create User — Name, Username, Email, Phone, Password</li>
+        <li>Role Management — add/remove roles per user</li>
+        <li>Username must match Azure SSO UPN exactly</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 5. CAPEX WORKFLOW -->
+  <div class="section-title">5. CapEx Approval Workflow</div>
+  <div class="card">
+    <div class="workflow">
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 1 — Project Created in ServiceNow</strong><span>Business Owner/Requestor notified → CapEx Form available in app</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 2 — Business Requestor fills CapEx Request Details</strong><span>Submits form → Business PM notified to assign Functional Managers</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 3 — Business PM assigns Functional Managers (CapEx Types &amp; BPM)</strong><span>IT Manager, Facilities Manager, Security Manager each receive assignment email</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 4 — Functional Managers fill their sections</strong><span>IT Summary (3 lead approvers) / Facilities Summary / Security Summary → Submit → Leadership notified (all members of leadership role)</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 5 — Leadership Approval (IT / Facilities / Security)</strong><span>Each section approved → CapEx form sections lock after approval</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 6 — Finance Team Review</strong><span>All functional approvals complete → Finance CapEx group email → IS Budget reviewed → RC Finance Approver assigned</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 7 — Regional / Corporate Finance Approver</strong><span>Reviews and approves → VP Finance Approver assigned</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 8 — VP Finance Approver</strong><span>Final financial approval → if Grand Total &gt; $25,000: adds EC approvers + sends EC email with deep links</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 9 — EC Approval (if budget &gt; $25,000)</strong><span>EC members click Approve/Reject in email → redirected to public token page → record decision + optional comment</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div><div class="wf-line"></div></div><div class="wf-text"><strong>Step 10 — CapEx ID Generated</strong><span>EDL API auto-generates <code>Proj-CapExId_XXXX</code> → Project Manager, Facilities Manager, IT Manager notified</span></div></div>
+      <div class="wf-step"><div class="wf-line-wrap"><div class="wf-dot"></div></div><div class="wf-text"><strong>Step 11 — Milestone Execution &amp; SLA Tracking</strong><span>Functional Managers assign milestones → assigned users complete + upload docs → daily SLA reminders for overdue items</span></div></div>
+    </div>
+  </div>
+
+  <!-- 6. DATABASE SCHEMA -->
+  <div class="section-title">6. Database Schema (18 Tables)</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Table</th><th>Key Fields</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td class="td-bold">users</td><td>id, name, username, email, isActive</td><td>All application users</td></tr>
+        <tr><td class="td-bold">roles</td><td>id, name (17 role types)</td><td>Role definitions</td></tr>
+        <tr><td class="td-bold">user_roles</td><td>userId, roleId</td><td>M:M user-role assignment</td></tr>
+        <tr><td class="td-bold">projects</td><td>prjNumber, name, phase, status, progressPct, riskStatus</td><td>Projects synced from ServiceNow</td></tr>
+        <tr><td class="td-bold">capex_forms</td><td>projectId, status, requesterId, businessPmId, isLocked</td><td>Master CapEx form record per project</td></tr>
+        <tr><td class="td-bold">capex_types</td><td>capexFormId, types[], itLeadId, facilitiesLeadId, securityLeadId</td><td>BPM functional manager assignments</td></tr>
+        <tr><td class="td-bold">it_summary</td><td>infrastructureCost, eosCost, capitalLaborCost, 3× lead approver IDs + statuses</td><td>IT section of CapEx form</td></tr>
+        <tr><td class="td-bold">facilities_summary</td><td>constructionCost, electricalCost, furnitureFixtureCost, othersCost, tia, seats</td><td>Facilities section of CapEx form</td></tr>
+        <tr><td class="td-bold">security_summary</td><td>physicalSecurityTotal, seats, securityLeadApproverId</td><td>Security section of CapEx form</td></tr>
+        <tr><td class="td-bold">finance_review</td><td>isBudget, explanation, financeLeadId, status</td><td>Finance team review stage</td></tr>
+        <tr><td class="td-bold">rc_finance_approvals</td><td>approverId, status, approvedDate, comments</td><td>Regional/Corporate Finance approval</td></tr>
+        <tr><td class="td-bold">vp_finance_approvals</td><td>approverId, status, approvedDate, comments</td><td>VP Finance approval</td></tr>
+        <tr><td class="td-bold">ec_approvals</td><td>approverName, status, token (for email link), comments</td><td>Executive Committee decisions</td></tr>
+        <tr><td class="td-bold">capex_ids</td><td>capexFormId, capexNumber (Proj-CapExId_XXXX), status, date</td><td>Generated CapEx IDs from EDL API</td></tr>
+        <tr><td class="td-bold">related_capex</td><td>capexFormId, relatedCapexNumber, description</td><td>Linked child/related CapEx IDs</td></tr>
+        <tr><td class="td-bold">amendments</td><td>capexFormId, amount, section, leadApproverId, status, note</td><td>Post-approval budget revisions</td></tr>
+        <tr><td class="td-bold">milestones</td><td>projectId, phase (1–5), name, assignedToId, status, slaDeadline</td><td>All project milestones</td></tr>
+        <tr><td class="td-bold">attachments</td><td>entityType, entityId, fileName, filePath, uploadedById</td><td>All uploaded files</td></tr>
+        <tr><td class="td-bold">email_log</td><td>type, recipientEmail, sentAt, status</td><td>Audit trail of all notifications</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 7. ROLES -->
+  <div class="section-title">7. Roles &amp; Screen Access Matrix (17 Roles)</div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Role</th><th>Milestone</th><th>CapEx Form</th><th>IT</th><th>Facilities</th><th>Security</th><th>Finance</th><th>Amendments</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="td-bold">Governance Manager</td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td></tr>
+        <tr><td class="td-bold">Business Manager</td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td></tr>
+        <tr><td class="td-bold">IT Manager</td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">IT Leadership</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">IT User</td><td><span class="badge badge-orange">assign only</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td></tr>
+        <tr><td class="td-bold">Facilities Manager</td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">Facilities Leadership</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">Facilities User</td><td><span class="badge badge-orange">assign only</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td><td><span class="badge badge-red">hidden</span></td></tr>
+        <tr><td class="td-bold">Security Manager</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">Security Leadership</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">Finance Lead</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-green">view/edit</span></td></tr>
+        <tr><td class="td-bold">RC Finance Approver</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">VP Finance Approver</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">EC Approver</td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">Strategic Sourcing Mgr</td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+        <tr><td class="td-bold">Strategic Sourcing Team</td><td><span class="badge badge-green">view/edit</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td><td><span class="badge badge-blue">view</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 8. EMAIL NOTIFICATIONS -->
+  <div class="section-title">8. Email Notification Flow (14 Events)</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>#</th><th>Trigger Event</th><th>Recipient</th><th>CC</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>New project created (ServiceNow)</td><td>Business Owner / Requestor</td><td>Business PM</td></tr>
+        <tr><td>2</td><td>CapEx form initiated by requestor</td><td>Business PM</td><td>—</td></tr>
+        <tr><td>3</td><td>BPM assigns IT Manager</td><td>IT Manager</td><td>Business PM</td></tr>
+        <tr><td>4</td><td>BPM assigns Facilities Manager</td><td>Facilities Manager</td><td>Business PM</td></tr>
+        <tr><td>5</td><td>BPM assigns Security Manager</td><td>Security Manager (Physical Security Lead)</td><td>Business PM</td></tr>
+        <tr><td>6</td><td>IT section submitted by IT Manager</td><td><strong>All IT Leadership role users</strong></td><td>Business PM</td></tr>
+        <tr><td>7</td><td>Facilities section submitted</td><td><strong>All Facilities Leadership role users</strong></td><td>Business PM</td></tr>
+        <tr><td>8</td><td>Security section submitted</td><td><strong>All Security Leadership role users</strong></td><td>Business PM</td></tr>
+        <tr><td>9</td><td>All functional sections approved</td><td>Finance CapEx Team (group email)</td><td>—</td></tr>
+        <tr><td>10</td><td>Finance Lead assigns RC Finance Approver</td><td>RC Finance Approver</td><td>Business PM</td></tr>
+        <tr><td>11</td><td>RC Finance Approver approves</td><td>VP Finance Approver</td><td>—</td></tr>
+        <tr><td>12</td><td>VP Finance assigns EC members</td><td>Each EC member (Approve/Reject email with deep link)</td><td>—</td></tr>
+        <tr><td>13</td><td>All EC members approve → Project Manager</td><td>Project Manager (confirming full approval)</td><td>—</td></tr>
+        <tr><td>14</td><td>CapEx ID generated</td><td>Project Manager + Facilities Manager + IT Manager (separate milestone assignment emails)</td><td>—</td></tr>
+        <tr><td>15</td><td>Milestone assigned to user</td><td>Assigned User (with SLA deadline)</td><td>Functional Manager</td></tr>
+        <tr><td>16</td><td>Daily SLA check — milestone overdue</td><td>Assigned User (reminder with due date)</td><td>Functional Manager</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 9. BUILD PLAN -->
+  <div class="section-title">9. Build Plan (Phased Implementation)</div>
+  <ul class="phase-list">
+    <li class="phase-item">
+      <div class="phase-num">1</div>
+      <div class="phase-body">
+        <h4>Phase 1 — Foundation &amp; Infrastructure (Days 1–2)</h4>
+        <p>Project scaffolding, full dependency installation, Prisma schema for all 19 tables, PostgreSQL database setup, Azure SSO configuration, context-sensitive sidebar layout.</p>
+        <ul>
+          <li>Next.js 14 + TypeScript + Tailwind CSS + shadcn/ui setup</li>
+          <li>Full Prisma schema + initial migration + seed data (one user per role, 8–10 projects at all stages)</li>
+          <li>NextAuth.js with Azure AD provider</li>
+          <li>Dynamic sidebar (3 states) + Alorica dark navy design tokens</li>
+        </ul>
+      </div>
+    </li>
+    <li class="phase-item">
+      <div class="phase-num">2</div>
+      <div class="phase-body">
+        <h4>Phase 2 — Executive Dashboard (Day 3)</h4>
+        <p>5-column Kanban board with project cards. Full filter bar (Region, Country, Location, Classification, Status) + search + Clear All. Click → navigates to Milestone Tracking.</p>
+      </div>
+    </li>
+    <li class="phase-item">
+      <div class="phase-num">3</div>
+      <div class="phase-body">
+        <h4>Phase 3 — Project Requests Page (Day 4)</h4>
+        <p>Role-filtered project table. "Assigned to me" toggle. Milestones + CapEx Form action buttons. Pagination. Pending projects blocked.</p>
+      </div>
+    </li>
+    <li class="phase-item">
+      <div class="phase-num">4</div>
+      <div class="phase-body">
+        <h4>Phase 4 — CapEx Form (Full Workflow) (Days 5–8)</h4>
+        <p>All 7 CapEx sub-sections with shared Project Management sidebar. Includes form locking logic and all approval chain integrations.</p>
+        <ul>
+          <li>Request Details — auto-populated fields + draft/submit</li>
+          <li>CapEx Types &amp; BPM — functional manager assignment</li>
+          <li>IT Summary — 3 cost lines + 3 lead approvers (Infrastructure, EOS, Capital Labor)</li>
+          <li>Facilities Summary — 4 cost lines + TIA + Lease Info</li>
+          <li>Security Summary — Physical Security total</li>
+          <li>Grand Total — auto-calculated</li>
+          <li>Finance Review — full chain: IS Budget → RC Finance → VP Finance → EC (if &gt;$25K) → CapEx ID generation</li>
+          <li>Amendments — post-approval budget revisions</li>
+          <li><strong>Global form lock after first approver submits</strong></li>
+        </ul>
+      </div>
+    </li>
+    <li class="phase-item">
+      <div class="phase-num">5</div>
+      <div class="phase-body">
+        <h4>Phase 5 — Both Milestone Views (Day 9) <span class="revision-tag">UPDATED</span></h4>
+        <p><strong>5a — Milestone Tracking (read-only):</strong> Visual 8-step timeline with dates, 5 phase progress bars, milestone detail list. Accessed from Executive Dashboard.</p>
+        <p style="margin-top:8px;"><strong>5b — Milestone Forms (editable):</strong> Phase 2–5 pages with accordion milestones, Owner assignment, file uploads, Save per milestone. Accessed from Project Requests.</p>
+      </div>
+    </li>
+    <li class="phase-item">
+      <div class="phase-num">6</div>
+      <div class="phase-body">
+        <h4>Phase 6 — Email Notification System (Day 10)</h4>
+        <p>16 Nodemailer HTML email templates. All workflow triggers wired. EC deep-link email with Approve/Reject buttons. Public EC approval page (<code>/ec/[token]</code>).</p>
+      </div>
+    </li>
+    <li class="phase-item">
+      <div class="phase-num">7</div>
+      <div class="phase-body">
+        <h4>Phase 7 — Admin Panel (Day 11)</h4>
+        <p>User list, create/edit users, role assignment. SSO username matching note.</p>
+      </div>
+    </li>
+    <li class="phase-item">
+      <div class="phase-num">8</div>
+      <div class="phase-body">
+        <h4>Phase 8 — SLA Cron, Role Guards &amp; Polish (Day 12)</h4>
+        <p>Daily SLA cron for milestone reminders. Route-level role guards (middleware.ts). Loading skeletons, error states, empty states. Final UI match to Alorica screenshots.</p>
+      </div>
+    </li>
+  </ul>
+
+  <!-- 10. ROUTES -->
+  <div class="section-title">10. Application Routes &amp; Pages <span class="revision-tag">UPDATED v1.1</span></div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Route</th><th>Page</th><th>Access</th></tr></thead>
+      <tbody>
+        <tr><td><code>/login</code></td><td>Azure SSO Login</td><td>Public</td></tr>
+        <tr><td><code>/dashboard</code></td><td>Executive Dashboard (Kanban board)</td><td>All authenticated roles</td></tr>
+        <tr><td><code>/milestone-tracking</code></td><td>Milestone Tracking landing (empty state)</td><td>All roles</td></tr>
+        <tr><td><code>/milestone-tracking/[projectId]</code></td><td>Milestone Tracking — visual timeline + read-only milestone list</td><td>All roles</td></tr>
+        <tr><td><code>/projects</code></td><td>Project Requests list</td><td>All roles (filtered by assignment)</td></tr>
+        <tr><td><code>/projects/[id]/milestones/phase-2</code></td><td>Editable Milestone Forms — Phase 2: Planning &amp; Approval</td><td>Functional Managers</td></tr>
+        <tr><td><code>/projects/[id]/milestones/phase-3</code></td><td>Editable Milestone Forms — Phase 3: Design &amp; Order</td><td>Functional Managers</td></tr>
+        <tr><td><code>/projects/[id]/milestones/phase-4</code></td><td>Editable Milestone Forms — Phase 4: Implementation</td><td>Functional Managers</td></tr>
+        <tr><td><code>/projects/[id]/milestones/phase-5</code></td><td>Editable Milestone Forms — Phase 5: Site Ready</td><td>Functional Managers</td></tr>
+        <tr><td><code>/projects/[id]/capex/request-details</code></td><td>CapEx — Request Details</td><td>Governance Mgr, Business Mgr</td></tr>
+        <tr><td><code>/projects/[id]/capex/types-bpm</code></td><td>CapEx — Types &amp; BPM (assign Functional Managers)</td><td>Business PM</td></tr>
+        <tr><td><code>/projects/[id]/capex/functional/it</code></td><td>CapEx — IT Summary (3 lead approvers)</td><td>IT Manager, IT Leadership</td></tr>
+        <tr><td><code>/projects/[id]/capex/functional/facilities</code></td><td>CapEx — Facilities Summary + Lease Info</td><td>Facilities Manager, Leadership</td></tr>
+        <tr><td><code>/projects/[id]/capex/functional/security</code></td><td>CapEx — Security Summary</td><td>Security Manager, Leadership</td></tr>
+        <tr><td><code>/projects/[id]/capex/total</code></td><td>CapEx — Grand Total (read-only auto-calculated)</td><td>All roles (view)</td></tr>
+        <tr><td><code>/projects/[id]/capex/finance-review</code></td><td>CapEx — Finance Review, RC/VP/EC approval chain, CapEx ID</td><td>Finance roles, EC Approver</td></tr>
+        <tr><td><code>/projects/[id]/capex/amendments</code></td><td>CapEx — Amendments (post-approval only)</td><td>Finance Lead + Governance Mgr</td></tr>
+        <tr><td><code>/ec/[token]</code></td><td>EC Approve / Reject (public, token-gated)</td><td>Public</td></tr>
+        <tr><td><code>/admin/users</code></td><td>Admin — User Management + Role Assignment</td><td>Admin role only</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 11. ENV VARS -->
+  <div class="section-title">11. Environment Configuration Required</div>
+  <div class="card">
+    <p style="margin-bottom:10px; color:#555;">Set in <code>.env.local</code> — never committed to source control.</p>
+    <pre>
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/alorica_sitebuild"
+
+# NextAuth + Azure Active Directory (SSO)
+NEXTAUTH_SECRET="[generate: openssl rand -base64 32]"
+NEXTAUTH_URL="http://localhost:3000"
+AZURE_AD_CLIENT_ID="[from Azure App Registration]"
+AZURE_AD_CLIENT_SECRET="[from Azure App Registration]"
+AZURE_AD_TENANT_ID="[Alorica's Azure Tenant ID]"
+
+# Email (SMTP — Alorica corporate mail server)
+SMTP_HOST="smtp.office365.com"
+SMTP_PORT="587"
+SMTP_USER="[service account email]"
+SMTP_PASS="[service account password]"
+SMTP_FROM="noreply@alorica.com"
+
+# Application
+NEXT_PUBLIC_APP_URL="http://localhost:3000"</pre>
+  </div>
+
+  <!-- 12. ACCEPTANCE CRITERIA -->
+  <div class="section-title">12. Acceptance Criteria &amp; Testing Checklist</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>#</th><th>Test Scenario</th><th>Expected Result</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Login via Azure SSO</td><td>Lands on Executive Dashboard; role shown bottom-left of sidebar</td></tr>
+        <tr><td>2</td><td>Dashboard — 5 Kanban columns</td><td>Project cards with status/risk badges and progress bars in correct phase column</td></tr>
+        <tr><td>3</td><td>Filter by Region on Dashboard</td><td>Only matching cards shown; Clear All resets</td></tr>
+        <tr><td>4</td><td>Click project card on Dashboard</td><td>Navigates to <code>/milestone-tracking/[id]</code> with 8-step visual timeline</td></tr>
+        <tr><td>5</td><td>Milestone Tracking — sidebar state</td><td>Dashboard &gt; Milestone Tracking is active; no Project Management section visible</td></tr>
+        <tr><td>6</td><td>Project Requests — "Assigned to me" toggle</td><td>Filters list to only current user's assigned projects</td></tr>
+        <tr><td>7</td><td>Click Milestones button in Project Requests</td><td>Navigates to <code>/projects/[id]/milestones/phase-2</code>; Project Management sidebar appears</td></tr>
+        <tr><td>8</td><td>Milestone Form — assign owner</td><td>Email log entry created for notification to assigned user; SLA deadline set</td></tr>
+        <tr><td>9</td><td>CapEx Request Details — Save as draft</td><td>Data saved; form re-opens with same values; no email triggered</td></tr>
+        <tr><td>10</td><td>CapEx Request Details — Submit</td><td>Email log entry for Business PM; form status = Submitted</td></tr>
+        <tr><td>11</td><td>CapEx IT Summary — 3 lead approver rows</td><td>Infrastructure, EOS, Capital Labor each have separate Approver + Status dropdowns</td></tr>
+        <tr><td>12</td><td>CapEx IT Summary — Submit</td><td>Email sent to ALL users with IT Leadership role; form locks</td></tr>
+        <tr><td>13</td><td>CapEx Finance — Grand Total &lt; $25,000</td><td>EC section does not appear in Finance Review page</td></tr>
+        <tr><td>14</td><td>CapEx Finance — Grand Total &gt; $25,000</td><td>EC section appears; Add EC button visible</td></tr>
+        <tr><td>15</td><td>EC Email button click</td><td>In-page email modal opens with pre-filled project summary + Approve/Reject deep links</td></tr>
+        <tr><td>16</td><td>EC approves via email link</td><td>Token page loads without login; approval recorded; confirmation shown</td></tr>
+        <tr><td>17</td><td>CapEx ID generated</td><td>Format <code>Proj-CapExId_XXXX</code> shown; milestone assignment emails sent to IT + Facilities Managers</td></tr>
+        <tr><td>18</td><td>Login as IT User</td><td>CapEx Form, Finance, Facilities, Security sections hidden; only milestone assignment visible</td></tr>
+        <tr><td>19</td><td>Admin creates user + assigns role</td><td>User in list; logging in shows correct role-gated screens</td></tr>
+        <tr><td>20</td><td>SLA cron endpoint</td><td>Returns 200; overdue milestones generate reminder email log entries</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="footer">
+  <strong>Alorica Site Build Application — Technical Implementation Plan v1.1</strong><br/>
+  Prepared May 2026 &nbsp;|&nbsp; Confidential — Internal Use Only
+</div>
+
+</body>
+</html>
