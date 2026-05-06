@@ -97,7 +97,7 @@ export function DashboardClient({ projects, filterOptions }: DashboardClientProp
       {/* Page header */}
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Executive Dashboard</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Executive Data</h2>
           <p className="text-sm text-gray-500 mt-0.5">
             {totalVisible === totalAll
               ? `${totalAll} projects`
