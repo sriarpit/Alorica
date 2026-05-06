@@ -1,0 +1,695 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum Status {
+  Approved
+  Rejected
+  InProgress
+  Completed
+  ApprovedbyLeadership
+  Draft
+  Submitted
+  Active
+  Unapproved
+  Closed
+  Pending
+  WorkinProgress
+  Delayed
+}
+
+enum CategoryType {
+  RequestorSection
+  BusinessPMSection
+  ITPMSection
+  FacilitiesPMSection
+  SecurityPMSection
+  ApprovalProjectStatusSection
+  IT
+  Facilities
+  Security
+}
+
+enum FileUploadType {
+  ClientFundedFileUpload
+  ClientContractualObligationFileUpload
+  ROIRequiredFileUpload
+  ITFileUpload
+  FacilitiesFileUpload
+  SecurityFileUpload
+  FinanceReviewFileUpload
+  BusinessPMFileUpload
+  MilestoneActivitesFileupload
+  AmendmentToAssignPerson
+  ExecutiveCommitteeFileUpload
+  MilestoneActivitesImageFileUpload
+  AttachFilesClientFunded
+  AttachFilesClientContractualObligation
+  AttachFilesROIRequired
+  AttachFilesIT
+  AttachFilesFacilities
+  AttachFilesSecurity
+}
+
+enum EmailType {
+  NewCapExToRequestorEmail
+  RequestorToBusinessPMEmail
+  BusinessToLeadApproverEmail
+  LeadApproverToFunctionalOrganizationLeadEmail
+  FunctionalOrganizationLeadToFinanceTeamEmail
+  FinanceTeamToFinanceApproverEmail
+  Milestone
+  MilestoneActivitiesAssignToEmail
+  MilestoneActivitiesAssignPendingEmail
+  FollowUp
+  ExecutivecommitteeEmail
+  CapExIdConfriomationEmail
+  RCFinanceApprover
+  VPFinanceApprover
+  FinanceReview
+  ECReview
+  CapExIdRejectionEmail
+  NewUserCreated
+  NewRoleCreated
+  StrategicSourcingManager
+}
+
+enum CommentsType {
+  Regional_CorporateFinanceComments
+  VPFinanceComments
+  ExecutiveCommittee
+  Amendments
+  NormalComment
+  SummaryComments
+}
+
+enum SystemTrackStatus {
+  Pending
+  WorkinProgress
+  Projectcreation
+  Aftersourcingkickoff
+  CAPEXforminitiated
+  CAPEXformcreation
+  AfterIT_Facility_Securityapprovals
+  AfterFinanceapproval
+  AfterECapproval
+  AfterCAPEXIDcreation
+  CAPEXIDcreated
+  Ordersplaced
+  Constructionstarted
+  AfterITRoombuildcompleted
+  Constructioncompleted
+  CapExROMApproved
+  CapExBusinessCaseApproval
+  FacilityOrders
+  ITOrdersInitiation
+  Facilityworkcompleted
+  ITordersreceived
+  Manual
+  Spent
+  Document
+  ITHandovertoClientPM
+  ClientIT_PCsDeployed
+  ITDeploymentCompleted
+  Completed
+  ProjectCreated
+}
+
+enum Phase {
+  Phase1
+  Phase2
+  Phase3
+  Phase4
+  Phase5
+}
+
+enum SourceSystem {
+  ServiceNow
+  OutSystems
+  Facilities
+  StrategicSourcing
+  EDL_Oracle
+}
+
+enum DayType {
+  businessdays
+  calendardays
+}
+
+// ==================== LOOKUP / SEED TABLES ====================
+
+model CapexClassification {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  capexRequests CapexRequest[]
+
+  @@map("capex_classifications")
+}
+
+model CapexSubClassification {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  capexRequests CapexRequest[]
+
+  @@map("capex_sub_classifications")
+}
+
+model ProjectType {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  capexRequests CapexRequest[]
+
+  @@map("project_types")
+}
+
+model MilestoneActivity {
+  id                           Int          @id @default(autoincrement())
+  label                        String
+  order                        Int
+  isActive                     Boolean      @default(true)
+  phaseNumber                  Int
+  phaseName                    String
+  sla                          Int?
+  sourceSystem                 SourceSystem?
+  triggerCondition             String?
+  group                        String?
+  dayType                      DayType?
+  typeOfFieldDis               String?
+  slaCalculationDateActivities String?
+  followUpEmailGroup           String?
+  roleType                     String?
+
+  trackings MilestoneActivitiesTracking[]
+
+  @@map("milestone_activities")
+}
+
+// ==================== USERS & ROLES ====================
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  username     String    @unique
+  password     String?
+  email        String    @unique
+  mobilePhone  String?
+  externalId   String?   @unique
+  creationDate DateTime  @default(now())
+  lastLogin    DateTime?
+  isActive     Boolean   @default(true)
+
+  userRoles UserRole[]
+
+  projectsManaged Project[] @relation("ProjectManager")
+  projectsOwned   Project[] @relation("BusinessOwner")
+
+  capexAsSponsor   CapexRequest[] @relation("CapexSponsor")
+  capexAsRequester CapexRequest[] @relation("CapexRequester")
+  capexAsPM        CapexRequest[] @relation("CapexPM")
+
+  ecMemberships ExecutiveCommitteeMember[]
+
+  milestoneAssignments MilestoneActivitiesTracking[] @relation("MilestoneAssignee")
+  milestoneUpdates     MilestoneActivitiesTracking[] @relation("MilestoneUpdater")
+
+  comments     Comment[]
+  activityLogs ActivityLog[]
+
+  infraLeadApprovals        CapexSectionDetails[] @relation("InfraLeadApprover")
+  infraApprovedByMe         CapexSectionDetails[] @relation("InfraApprovedBy")
+  eusLeadApprovals          CapexSectionDetails[] @relation("EusLeadApprover")
+  eusApprovedByMe           CapexSectionDetails[] @relation("EusApprovedBy")
+  capLaborLeadApprovals     CapexSectionDetails[] @relation("CapLaborLeadApprover")
+  capLaborApprovedByMe      CapexSectionDetails[] @relation("CapLaborApprovedBy")
+  facilitiesLeadApprovals   CapexSectionDetails[] @relation("FacilitiesLeadApprover")
+  securityLeadApprovals     CapexSectionDetails[] @relation("SecurityLeadApprover")
+  securityApprovedByMe      CapexSectionDetails[] @relation("SecurityApprovedBy")
+
+  rcFinanceApproverOf  CapexFinanceApproval[] @relation("RCFinanceApprover")
+  rcFinanceApprovedBy  CapexFinanceApproval[] @relation("RCFinanceApprovedBy")
+  vpFinanceApproverOf  CapexFinanceApproval[] @relation("VPFinanceApprover")
+  vpFinanceReviewedBy  CapexFinanceApproval[] @relation("VPFinanceReviewedBy")
+  vpFinanceApprovedBy  CapexFinanceApproval[] @relation("VPFinanceApprovedBy")
+
+  amendmentLeadApprovals  Amendment[] @relation("AmendmentLeadApprover")
+  amendmentLeadApprovedBy Amendment[] @relation("AmendmentLeadApprovedBy")
+
+  @@map("users")
+}
+
+model Role {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId String
+  roleId Int
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+// ==================== PROJECTS ====================
+
+model Project {
+  id               String    @id @default(cuid())
+  prjNumber        String    @unique
+  name             String
+  projectManagerId String
+  businessOwnerId  String?
+  status           Status    @default(Pending)
+  phase            Phase     @default(Phase1)
+  region           String?
+  country          String?
+  location         String?
+  classification   String?
+  startDate        DateTime?
+  endDate          DateTime?
+  goLiveDate       DateTime?
+  progressPct      Int       @default(0)
+  riskStatus       String?
+  createdAt        DateTime  @default(now())
+
+  projectManager User  @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  businessOwner  User? @relation("BusinessOwner", fields: [businessOwnerId], references: [id])
+
+  capexRequests CapexRequest[]
+
+  @@map("projects")
+}
+
+// ==================== CAPEX REQUEST ====================
+
+model CapexRequest {
+  id                            String    @id @default(cuid())
+  guid                          String    @unique @default(uuid())
+  projectId                     String?
+  businessSponsorId             String?
+  businessRequesterId           String?
+  projectManagerId              String?
+  requestDate                   DateTime?
+  projectName                   String?
+  serviceNowProjectNo           String?
+  region                        String?
+  country                       String?
+  specification                 String?
+  projectDescription            String?
+  businessJustification         String?
+  isClientMandated              Boolean   @default(false)
+  clientNameFromDropdown        String?
+  clientName                    String?
+  isFunded                      Boolean   @default(false)
+  isClientContractualObligation Boolean   @default(false)
+  clientMandatedComments        String?
+  isNewlogoGrowth               Boolean   @default(false)
+  newlogoGrowth                 String?
+  isNewlogoNotListed            Boolean   @default(false)
+  capexClassificationId         Int?
+  capexSubClassificationId      Int?
+  projectTypeId                 Int?
+  scope                         String?
+  goLiveOnDate                  DateTime?
+  projectTakeDate               DateTime?
+  trackingCategory              String?
+  comments                      String?
+  state                         Status    @default(Draft)
+  createdBy                     String?
+  createdOn                     DateTime  @default(now())
+  updatedBy                     String?
+  updatedOn                     DateTime  @updatedAt
+  googlemapsLocationlink        String?
+  requestStatus                 Status    @default(Draft)
+  finalStatusDate               DateTime?
+  tempBusinessSponsorEmail      String?
+  tempBusinessRequesterEmail    String?
+  tempProjectManagerEmail       String?
+  isActive                      Boolean   @default(true)
+
+  project                Project?                @relation(fields: [projectId], references: [id])
+  businessSponsor        User?                   @relation("CapexSponsor", fields: [businessSponsorId], references: [id])
+  businessRequester      User?                   @relation("CapexRequester", fields: [businessRequesterId], references: [id])
+  projectManager         User?                   @relation("CapexPM", fields: [projectManagerId], references: [id])
+  capexClassification    CapexClassification?    @relation(fields: [capexClassificationId], references: [id])
+  capexSubClassification CapexSubClassification? @relation(fields: [capexSubClassificationId], references: [id])
+  projectType            ProjectType?            @relation(fields: [projectTypeId], references: [id])
+
+  businessPm      CapexRequestBusinessPm?
+  sectionDetails  CapexSectionDetails?
+  financeApproval CapexFinanceApproval?
+
+  ecMembers    ExecutiveCommitteeMember[]
+  amendments   Amendment[]
+  relatedCapex RelatedCapex[]
+  attachments  CapexAttachment[]
+  capexComments Comment[]
+  milestones   MilestoneActivitiesTracking[]
+  activityLogs ActivityLog[]
+
+  @@map("capex_requests")
+}
+
+model CapexRequestBusinessPm {
+  capExRequestId               String    @id
+  isIt                         Boolean   @default(false)
+  isFacilities                 Boolean   @default(false)
+  isPhysicalSecurity           Boolean   @default(false)
+  itPmId                       String?
+  facilitiesPmId               String?
+  facilitiesPmCreateDate       DateTime?
+  physicalSecurityPmId         String?
+  itPmCreateDate               DateTime?
+  physicalSecurityPmCreateDate DateTime?
+  isRoiRequired                Boolean   @default(false)
+  roiComment                   String?
+  status                       Status    @default(Draft)
+  financeAssignDate            DateTime?
+  financeTeamId                String?
+  createdOn                    DateTime  @default(now())
+  updatedOn                    DateTime  @updatedAt
+
+  capexRequest CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+
+  @@map("capex_request_business_pm")
+}
+
+model CapexSectionDetails {
+  capExRequestId String @id
+
+  // IT fields
+  infrastructureCostTotal        Decimal?  @db.Decimal(18, 2)
+  eusCostTotal                   Decimal?  @db.Decimal(18, 2)
+  capitalLaborCostTotal          Decimal?  @db.Decimal(18, 2)
+  infrastructureCostSeats        Int?
+  eusCostSeats                   Int?
+  capitalLaborCostSeats          Int?
+  isExistingInventoryEvaluatedIT Boolean?
+  isCompetitiveBidIT             Boolean?
+  infrastructureLeadApproverId   String?
+  infrastructureLeadStatus       Status?
+  infrastructureLeadApprovedById String?
+  infrastructureLeadApprovedDate DateTime?
+  eusLeadApproverId              String?
+  eusApprovedById                String?
+  eusStatus                      Status?
+  eusApprovedDate                DateTime?
+  capitalLaborLeadApproverId     String?
+  capitalLaborLeadStatus         Status?
+  capitalLaborApprovedById       String?
+  capitalLaborApprovedDate       DateTime?
+  itComments                     String?
+  itSessionStatus                Status?
+  itCreatedOn                    DateTime?
+  itUpdatedBy                    String?
+  itUpdatedOn                    DateTime?
+  itSessionCreatedBy             String?
+
+  // Facilities fields
+  construction                    Decimal?  @db.Decimal(18, 2)
+  electricalCabling               Decimal?  @db.Decimal(18, 2)
+  furnitureFixture                Decimal?  @db.Decimal(18, 2)
+  others                          Decimal?  @db.Decimal(18, 2)
+  constructionSeats               Int?
+  electricalCablingSeats          Int?
+  furnitureFixtureSeats           Int?
+  othersSeats                     Int?
+  tenantImprovementAllowance      Decimal?  @db.Decimal(18, 2)
+  isExistingInventoryEvaluatedFac Boolean?
+  isCompetitiveBidFac             Boolean?
+  facilitiesLeadApproverId        String?
+  facilitiesStatus                Status?
+  facilitiesApprovedDate          DateTime?
+  facilitiesSessionStatus         Status?
+  facilitiesCreatedOn             DateTime?
+  facilitiesUpdatedOn             DateTime?
+  facilitiesSessionCreatedBy      String?
+
+  // Lease info (part of facilities)
+  leaseRegion           String?
+  leaseLocation         String?
+  leaseDetails          String?
+  leaseTerms            String?
+  leaseTermsConditions  String?
+  totalLeaseValue       Decimal? @db.Decimal(18, 2)
+  currentYearOpexImpact Decimal? @db.Decimal(18, 2)
+
+  // Security fields
+  securityTotal                   Decimal?  @db.Decimal(18, 2)
+  securitySeats                   Int?
+  isExistingInventoryEvaluatedSec Boolean?
+  isCompetitiveBidSec             Boolean?
+  securityLeadApproverId          String?
+  securityLeadApprovedById        String?
+  securityLeadApproveStatus       Status?
+  securityApprovedDate            DateTime?
+  securitySessionStatus           Status?
+  securityCreatedBy               String?
+  securityCreatedOn               DateTime?
+  securityUpdatedBy               String?
+  securityUpdatedOn               DateTime?
+
+  // Shared
+  isSendFinanceEmail Boolean?
+  hCreatedBy         String?
+  hCreatedOn         DateTime?
+  hUpdatedBy         String?
+  hUpdatedOn         DateTime?
+
+  capexRequest           CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+  infraLeadApprover      User?        @relation("InfraLeadApprover", fields: [infrastructureLeadApproverId], references: [id])
+  infraApprovedByUser    User?        @relation("InfraApprovedBy", fields: [infrastructureLeadApprovedById], references: [id])
+  eusLeadApprover        User?        @relation("EusLeadApprover", fields: [eusLeadApproverId], references: [id])
+  eusApprovedByUser      User?        @relation("EusApprovedBy", fields: [eusApprovedById], references: [id])
+  capLaborLeadApprover   User?        @relation("CapLaborLeadApprover", fields: [capitalLaborLeadApproverId], references: [id])
+  capLaborApprovedByUser User?        @relation("CapLaborApprovedBy", fields: [capitalLaborApprovedById], references: [id])
+  facilitiesLeadApprover User?        @relation("FacilitiesLeadApprover", fields: [facilitiesLeadApproverId], references: [id])
+  securityLeadApprover   User?        @relation("SecurityLeadApprover", fields: [securityLeadApproverId], references: [id])
+  securityApprovedByUser User?        @relation("SecurityApprovedBy", fields: [securityLeadApprovedById], references: [id])
+
+  @@map("capex_section_details")
+}
+
+model CapexFinanceApproval {
+  capExRequestId            String    @id
+  isBudget                  Boolean?
+  explanation               String?
+  regCorpFinanceApproverId  String?
+  regCorpApproverDate       DateTime?
+  regionalApprovalStatusId  Status?
+  regCorpApproveById        String?
+  vpFinanceApproverId       String?
+  vpFinanceApprovalStatusId Status?
+  vpApprovedDate            DateTime?
+  vpFinanceReviewedById     String?
+  vpApprovedById            String?
+  projectCapex              String?
+  projectStatus             Status?
+  projectStatusDate         DateTime?
+  projectStatusModifyDate   DateTime?
+  projectStatusTxt          String?
+  isCapExIdManuallyCreated  Boolean?
+  statusSA                  Status?
+  statusRC                  Status?
+  statusIF                  Status?
+  statusVP                  Status?
+  createdBy                 String?
+  createdOn                 DateTime  @default(now())
+  updatedBy                 String?
+  updatedOn                 DateTime  @updatedAt
+
+  capexRequest        CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+  rcFinanceApprover   User?        @relation("RCFinanceApprover", fields: [regCorpFinanceApproverId], references: [id])
+  rcFinanceApprovedBy User?        @relation("RCFinanceApprovedBy", fields: [regCorpApproveById], references: [id])
+  vpFinanceApprover   User?        @relation("VPFinanceApprover", fields: [vpFinanceApproverId], references: [id])
+  vpFinanceReviewedBy User?        @relation("VPFinanceReviewedBy", fields: [vpFinanceReviewedById], references: [id])
+  vpFinanceApprovedBy User?        @relation("VPFinanceApprovedBy", fields: [vpApprovedById], references: [id])
+
+  @@map("capex_finance_approval")
+}
+
+model ExecutiveCommitteeMember {
+  id             String    @id @default(cuid())
+  capExRequestId String
+  userId         String?
+  status         Status    @default(Pending)
+  lastModifyDate DateTime?
+  comments       String?
+  token          String    @unique @default(uuid())
+
+  capexRequest CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@map("executive_committee_members")
+}
+
+model Amendment {
+  id                String    @id @default(cuid())
+  capExRequestId    String
+  amendment         String?
+  amendmentAmount   Decimal?  @db.Decimal(18, 2)
+  amendmentDate     DateTime?
+  note              String?
+  projectStatusDate DateTime?
+  leadApproverId    String?
+  leadApproveById   String?
+  leadApproveDate   DateTime?
+  approvalStatusId  Status?
+  approverType      String?
+  status            Status    @default(Pending)
+  createdBy         String?
+  createdOn         DateTime  @default(now())
+  updatedBy         String?
+  updatedOn         DateTime  @updatedAt
+
+  capexRequest    CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+  leadApprover    User?        @relation("AmendmentLeadApprover", fields: [leadApproverId], references: [id])
+  leadApprovedBy  User?        @relation("AmendmentLeadApprovedBy", fields: [leadApproveById], references: [id])
+
+  @@map("amendments")
+}
+
+model RelatedCapex {
+  id              String    @id @default(cuid())
+  capExRequestId  String
+  capExNo         String?
+  description     String?
+  createdBy       String?
+  systemCreatedBy String?
+  createdDate     DateTime  @default(now())
+  updatedBy       String?
+  updatedOn       DateTime  @updatedAt
+
+  capexRequest CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+
+  @@map("related_capex")
+}
+
+model CapexAttachment {
+  id             String         @id @default(cuid())
+  capExRequestId String
+  fileContent    String
+  fileName       String
+  sectionId      FileUploadType
+  secondaryId    String?
+
+  capexRequest CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+
+  @@map("capex_attachments")
+}
+
+model Comment {
+  id              String        @id @default(cuid())
+  capExRequestId  String
+  comments        String?
+  createdById     String?
+  createdOn       DateTime      @default(now())
+  commentsType    CommentsType?
+  categoryType    CategoryType?
+  secondaryId     String?
+  summaryComments String?
+
+  capexRequest CapexRequest @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdById], references: [id])
+
+  @@map("comments")
+}
+
+model MilestoneActivitiesTracking {
+  id                    String    @id @default(cuid())
+  capExRequestId        String
+  milestoneActivitiesId Int?
+  startDate             DateTime?
+  endDate               DateTime?
+  remarks               String?
+  status                Status    @default(Pending)
+  assignedTo            String?
+  dueDate               DateTime?
+  spent                 Decimal?  @db.Decimal(18, 2)
+  completedDate         DateTime?
+  plannedEndDate        DateTime?
+  isActive              Boolean   @default(true)
+  updateTime            DateTime?
+  updatedById           String?
+
+  capexRequest      CapexRequest       @relation(fields: [capExRequestId], references: [id], onDelete: Cascade)
+  milestoneActivity MilestoneActivity? @relation(fields: [milestoneActivitiesId], references: [id])
+  assignee          User?              @relation("MilestoneAssignee", fields: [assignedTo], references: [id])
+  updater           User?              @relation("MilestoneUpdater", fields: [updatedById], references: [id])
+
+  @@map("milestone_activities_tracking")
+}
+
+// ==================== SUPPORTING TABLES ====================
+
+model Location {
+  id              String    @id @default(cuid())
+  regions         String?
+  countries       String?
+  locations       String?
+  locationCode    String?
+  isActive        Boolean   @default(true)
+  createdDateTime DateTime  @default(now())
+  updatedDateTime DateTime  @updatedAt
+
+  @@map("location")
+}
+
+model ClientName {
+  id              String   @id @default(cuid())
+  clientName      String
+  createdDateTime DateTime @default(now())
+
+  @@map("client_names")
+}
+
+model ApiLog {
+  id              String   @id @default(cuid())
+  timestamp       DateTime @default(now())
+  actionType      String?
+  method          String?
+  statusCode      Int?
+  requestPayload  String?
+  responsePayload String?
+  errorDetails    String?
+  isIncoming      Boolean?
+  moduleName      String?
+
+  @@map("api_log")
+}
+
+model ActivityLog {
+  id                 String    @id @default(cuid())
+  timerLog           DateTime  @default(now())
+  userId             String?
+  actionType         String?
+  capExRequestId     String?
+  activityLogMessage String?
+
+  user         User?         @relation(fields: [userId], references: [id])
+  capexRequest CapexRequest? @relation(fields: [capExRequestId], references: [id])
+
+  @@map("activity_log")
+}
+
+model GenericFile {
+  id          String @id @default(cuid())
+  fileContent String
+  fileName    String
+
+  @@map("generic_files")
+}
