@@ -285,6 +285,7 @@ model Project {
   goLiveDate       DateTime?
   progressPct      Int       @default(0)
   riskStatus       String?
+  isActive         Boolean   @default(true)
   createdAt        DateTime  @default(now())
 
   projectManager User  @relation("ProjectManager", fields: [projectManagerId], references: [id])

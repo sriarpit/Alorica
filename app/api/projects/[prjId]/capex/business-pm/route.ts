@@ -53,10 +53,21 @@ export async function PUT(
     select: { itPmId: true, facilitiesPmId: true, physicalSecurityPmId: true },
   });
 
+  // Parse date fields from ISO strings
+  const createData: Record<string, unknown> = { capExRequestId: capexId, ...body };
+  const updateData: Record<string, unknown> = { ...body };
+  for (const dateField of ["itPmCreateDate", "facilitiesPmCreateDate", "physicalSecurityPmCreateDate", "financeAssignDate"]) {
+    if (body[dateField] !== undefined) {
+      const parsed = body[dateField] ? new Date(body[dateField]) : null;
+      createData[dateField] = parsed;
+      updateData[dateField] = parsed;
+    }
+  }
+
   const bpm = await db.capexRequestBusinessPm.upsert({
     where: { capExRequestId: capexId },
-    create: { capExRequestId: capexId, ...body },
-    update: body,
+    create: createData as Parameters<typeof db.capexRequestBusinessPm.upsert>[0]["create"],
+    update: updateData as Parameters<typeof db.capexRequestBusinessPm.upsert>[0]["update"],
   });
 
   const project = await db.project.findUnique({
