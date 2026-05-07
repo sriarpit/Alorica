@@ -188,6 +188,42 @@ export async function PUT(
     });
   }
 
+  // Auto-advance project phase when all milestones in current phase are completed
+  const currentProject = await db.project.findUnique({
+    where: { id: params.prjId },
+    select: { phase: true },
+  });
+  if (currentProject) {
+    const phaseOrder = ["Phase1", "Phase2", "Phase3", "Phase4", "Phase5"];
+    const currentIndex = phaseOrder.indexOf(currentProject.phase);
+    if (currentIndex >= 0 && currentIndex < 4) {
+      const currentPhaseNum = currentIndex + 1;
+      const phaseActivities = await db.milestoneActivity.findMany({
+        where: { isActive: true, phaseNumber: currentPhaseNum },
+        select: { id: true },
+      });
+      if (phaseActivities.length > 0) {
+        const phaseTracking = await db.milestoneActivitiesTracking.findMany({
+          where: {
+            capExRequestId: capexId,
+            milestoneActivitiesId: { in: phaseActivities.map((a) => a.id) },
+            isActive: true,
+          },
+          select: { status: true },
+        });
+        const allPhaseDone =
+          phaseTracking.length === phaseActivities.length &&
+          phaseTracking.every((t) => t.status === "Completed");
+        if (allPhaseDone) {
+          await db.project.update({
+            where: { id: params.prjId },
+            data: { phase: phaseOrder[currentIndex + 1] as any },
+          });
+        }
+      }
+    }
+  }
+
   return Response.json({
     id: record.id,
     status: record.status,

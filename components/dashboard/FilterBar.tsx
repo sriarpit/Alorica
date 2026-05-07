@@ -24,11 +24,9 @@ interface FilterBarProps {
   filters: FilterState;
   onChange: (filters: FilterState) => void;
   options: {
-    regions: string[];
-    countries: string[];
-    locations: string[];
     classifications: string[];
     statuses: string[];
+    locationHierarchy: Record<string, Record<string, string[]>>;
   };
 }
 
@@ -36,12 +34,15 @@ const STATUS_LABELS: Record<string, string> = {
   InProgress: "In Progress",
   Completed: "Completed",
   Pending: "Pending",
-  Delayed: "Delayed",
-  Active: "Active",
-  Draft: "Draft",
 };
 
+function dedup(arr: string[]): string[] {
+  return arr.filter((v, i, a) => a.indexOf(v) === i).sort();
+}
+
 export function FilterBar({ filters, onChange, options }: FilterBarProps) {
+  const { locationHierarchy } = options;
+
   const hasActiveFilters =
     filters.search ||
     filters.region ||
@@ -55,7 +56,6 @@ export function FilterBar({ filters, onChange, options }: FilterBarProps) {
   }
 
   function set(key: keyof FilterState, value: string) {
-    // Reset downstream filters when parent filter changes
     if (key === "region") {
       onChange({ ...filters, region: value, country: "", location: "" });
     } else if (key === "country") {
@@ -65,13 +65,30 @@ export function FilterBar({ filters, onChange, options }: FilterBarProps) {
     }
   }
 
-  // Filter country options by selected region
+  // Cascading options derived from hierarchy
+  const regionOptions = Object.keys(locationHierarchy).sort();
+
   const countryOptions = filters.region
-    ? options.countries.filter((c) => {
-        // We don't have region→country mapping here, so show all countries unless needed
-        return true;
-      })
-    : options.countries;
+    ? Object.keys(locationHierarchy[filters.region] ?? {}).sort()
+    : dedup(
+        Object.values(locationHierarchy).flatMap((countries) => Object.keys(countries))
+      );
+
+  const locationOptions = filters.country
+    ? filters.region
+      ? (locationHierarchy[filters.region]?.[filters.country] ?? []).slice().sort()
+      : dedup(
+          Object.values(locationHierarchy).flatMap(
+            (countries) => countries[filters.country] ?? []
+          )
+        )
+    : filters.region
+    ? dedup(Object.values(locationHierarchy[filters.region] ?? {}).flat())
+    : dedup(
+        Object.values(locationHierarchy)
+          .flatMap((countries) => Object.values(countries))
+          .flat()
+      );
 
   return (
     <div className="flex flex-wrap items-center gap-2 bg-white rounded-lg border border-gray-200 px-4 py-3 mb-6">
@@ -79,7 +96,7 @@ export function FilterBar({ filters, onChange, options }: FilterBarProps) {
       <div className="relative flex-1 min-w-48">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
         <Input
-          placeholder="Search projects..."
+          placeholder="Search by project number, title, or manager..."
           value={filters.search}
           onChange={(e) => set("search", e.target.value)}
           className="pl-9 h-9 text-sm"
@@ -93,13 +110,13 @@ export function FilterBar({ filters, onChange, options }: FilterBarProps) {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="_all">All Regions</SelectItem>
-          {options.regions.map((r) => (
+          {regionOptions.map((r) => (
             <SelectItem key={r} value={r}>{r}</SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      {/* Country */}
+      {/* Country — narrows based on selected region */}
       <Select value={filters.country} onValueChange={(v) => set("country", v === "_all" ? "" : v)}>
         <SelectTrigger className="h-9 text-sm w-36">
           <SelectValue placeholder="Country" />
@@ -112,20 +129,20 @@ export function FilterBar({ filters, onChange, options }: FilterBarProps) {
         </SelectContent>
       </Select>
 
-      {/* Location */}
+      {/* Location — narrows based on selected country (and region) */}
       <Select value={filters.location} onValueChange={(v) => set("location", v === "_all" ? "" : v)}>
         <SelectTrigger className="h-9 text-sm w-36">
           <SelectValue placeholder="Location" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="_all">All Locations</SelectItem>
-          {options.locations.map((l) => (
+          {locationOptions.map((l) => (
             <SelectItem key={l} value={l}>{l}</SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      {/* Classification */}
+      {/* Classification — fixed 4 values */}
       <Select value={filters.classification} onValueChange={(v) => set("classification", v === "_all" ? "" : v)}>
         <SelectTrigger className="h-9 text-sm w-40">
           <SelectValue placeholder="Classification" />
@@ -138,7 +155,7 @@ export function FilterBar({ filters, onChange, options }: FilterBarProps) {
         </SelectContent>
       </Select>
 
-      {/* Status */}
+      {/* Status — fixed 3 values */}
       <Select value={filters.status} onValueChange={(v) => set("status", v === "_all" ? "" : v)}>
         <SelectTrigger className="h-9 text-sm w-36">
           <SelectValue placeholder="Status" />

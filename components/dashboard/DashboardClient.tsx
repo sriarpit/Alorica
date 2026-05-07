@@ -26,7 +26,7 @@ const PHASES = [
   },
   {
     key: "Phase4",
-    label: "Implementation",
+    label: "Implementation / Build-Out",
     color: "bg-orange-500",
     dotColor: "bg-orange-500",
   },
@@ -41,11 +41,9 @@ const PHASES = [
 interface DashboardClientProps {
   projects: ProjectCardData[];
   filterOptions: {
-    regions: string[];
-    countries: string[];
-    locations: string[];
     classifications: string[];
     statuses: string[];
+    locationHierarchy: Record<string, Record<string, string[]>>;
   };
 }
 
@@ -84,7 +82,10 @@ export function DashboardClient({ projects, filterOptions }: DashboardClientProp
     () =>
       PHASES.map((phase) => ({
         ...phase,
-        projects: filtered.filter((p) => p.phase === phase.key),
+        projects:
+          phase.key === "Phase5"
+            ? filtered.filter((p) => p.phase === "Phase5" || p.status === "Completed")
+            : filtered.filter((p) => p.phase === phase.key && p.status !== "Completed"),
       })),
     [filtered]
   );
@@ -97,11 +98,7 @@ export function DashboardClient({ projects, filterOptions }: DashboardClientProp
       {/* Page header */}
       <div className="mb-4 flex items-center justify-between">
         <div>
-
           <h2 className="text-2xl font-bold text-gray-900">Executive Dashboard</h2>
-
-
-
           <p className="text-sm text-gray-500 mt-0.5">
             {totalVisible === totalAll
               ? `${totalAll} projects`
