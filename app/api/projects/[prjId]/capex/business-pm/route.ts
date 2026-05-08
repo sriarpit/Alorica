@@ -3,6 +3,7 @@ import { db } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendEmail } from "@/lib/email/mailer";
 import { functionalAssignmentEmail } from "@/lib/email/templates";
+import { autoCompleteMilestone } from "@/lib/milestones";
 
 async function getCapexId(prjId: string) {
   const c = await db.capexRequest.findFirst({
@@ -102,6 +103,16 @@ export async function PUT(
         ).catch(() => {});
       }
     }
+  }
+
+  // Auto-complete ROM milestones for newly assigned sections
+  if (capexId) {
+    if (body.isIt && body.itPmId)
+      await autoCompleteMilestone(capexId, params.prjId, "Approved – IT", userId);
+    if (body.isFacilities && body.facilitiesPmId)
+      await autoCompleteMilestone(capexId, params.prjId, "Approved – Facilities", userId);
+    if (body.isPhysicalSecurity && body.physicalSecurityPmId)
+      await autoCompleteMilestone(capexId, params.prjId, "Approved – Security", userId);
   }
 
   return Response.json(bpm);

@@ -3,7 +3,8 @@ import { db } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { Status } from "@prisma/client";
 import { sendEmail } from "@/lib/email/mailer";
-import { capexSubmittedEmail } from "@/lib/email/templates";
+import { capexSubmittedEmail, requestDetailsSubmittedEmail } from "@/lib/email/templates";
+import { autoCompleteMilestone } from "@/lib/milestones";
 
 async function getCapexForProject(prjId: string) {
   return db.capexRequest.findFirst({
@@ -128,21 +129,47 @@ export async function PUT(
     },
   });
 
-  // Notify Business PM when CapEx form is submitted
-  if (newState === "Submitted" && rest.tempBusinessPmEmail) {
+  // Auto-complete CAPEX Form Initiated milestone on first submission
+  if (newState === "Submitted") {
+    await autoCompleteMilestone(existing.id, params.prjId, "CAPEX Form Initiated", userId);
+  }
+
+  // Email #2 — Request Details Submitted → BPM Team + CC Business PM + Requester
+  if (newState === "Submitted") {
     const projectName = (capex as any).project?.name ?? "";
     const projectNumber = (capex as any).project?.prjNumber ?? "";
     const requesterName = (capex as any).businessRequester?.name ?? "Requestor";
-    sendEmail(
-      capexSubmittedEmail({
-        to: rest.tempBusinessPmEmail as string,
-        businessPmName: rest.tempBusinessPmEmail as string,
-        projectName,
-        projectNumber,
-        requesterName,
-        prjId: params.prjId,
-      })
-    ).catch(() => {});
+    const bpmTeamEmail = process.env.CAPEX_BPM_EMAIL;
+    const ccList = [rest.tempBusinessPmEmail, rest.tempBusinessRequesterEmail].filter(Boolean) as string[];
+
+    if (bpmTeamEmail) {
+      sendEmail(
+        requestDetailsSubmittedEmail({
+          to: bpmTeamEmail,
+          cc: ccList.length ? ccList : undefined,
+          projectNumber,
+          projectName,
+          requesterName,
+          region: rest.region as string ?? "",
+          country: rest.country as string ?? "",
+          prjId: params.prjId,
+        })
+      ).catch(() => {});
+    }
+
+    // Also notify Business PM directly
+    if (rest.tempBusinessPmEmail) {
+      sendEmail(
+        capexSubmittedEmail({
+          to: rest.tempBusinessPmEmail as string,
+          businessPmName: rest.tempBusinessPmEmail as string,
+          projectName,
+          projectNumber,
+          requesterName,
+          prjId: params.prjId,
+        })
+      ).catch(() => {});
+    }
   }
 
   return Response.json(capex);

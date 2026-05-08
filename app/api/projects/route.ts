@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/prisma";
 import { Status } from "@prisma/client";
+import { sendEmail } from "@/lib/email/mailer";
+import { projectCreatedEmail } from "@/lib/email/templates";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -38,4 +40,37 @@ export async function GET(request: NextRequest) {
   });
 
   return Response.json(projects);
+}
+
+// Called by ServiceNow sync or admin import to upsert a project
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+
+  const project = await db.project.upsert({
+    where: { prjNumber: body.prjNumber },
+    update: body,
+    create: body,
+    include: {
+      projectManager: { select: { email: true, name: true } },
+      businessOwner: { select: { email: true, name: true } },
+    },
+  });
+
+  // Email #1 — send when project status becomes WorkInProgress
+  if (body.status === "WorkinProgress" && project.businessOwner?.email) {
+    sendEmail(
+      projectCreatedEmail({
+        to: project.businessOwner.email,
+        cc: project.projectManager?.email ?? undefined,
+        requesterName: project.businessOwner.name,
+        projectNumber: project.prjNumber,
+        projectName: project.name,
+        requestDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+        currentStatus: "Work In Progress",
+        prjId: project.id,
+      })
+    ).catch(() => {});
+  }
+
+  return Response.json(project, { status: 201 });
 }

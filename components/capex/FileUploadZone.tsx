@@ -17,6 +17,7 @@ interface Props {
   initialAttachments?: Attachment[];
   disabled?: boolean;
   label?: string;
+  accept?: string;
 }
 
 export function FileUploadZone({
@@ -26,7 +27,11 @@ export function FileUploadZone({
   initialAttachments = [],
   disabled = false,
   label = "Attachments",
+  accept,
 }: Props) {
+  const defaultAccept = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.zip,.csv,.txt";
+  const resolvedAccept = accept ?? defaultAccept;
+  const isImageOnly = !!accept && accept.includes("image/");
   const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -89,14 +94,16 @@ export function FileUploadZone({
             Drag & drop files here, or{" "}
             <span className="text-[#0f1e35] font-medium">browse</span>
           </p>
-          <p className="text-xs text-gray-400 mt-1">PDF, Word, Excel, images — max 10 MB each</p>
+          <p className="text-xs text-gray-400 mt-1">
+            {isImageOnly ? "PNG, JPG, JPEG images — max 10 MB each" : "PDF, Word, Excel, images — max 10 MB each"}
+          </p>
           <input
             ref={inputRef}
             type="file"
             multiple
             className="hidden"
             onChange={(e) => e.target.files && upload(e.target.files)}
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.zip,.csv,.txt"
+            accept={resolvedAccept}
           />
         </div>
       )}

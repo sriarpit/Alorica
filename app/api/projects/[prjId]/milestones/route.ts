@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { Status } from "@prisma/client";
 import { sendEmail } from "@/lib/email/mailer";
 import { milestoneAssignedEmail } from "@/lib/email/templates";
+import { addSLADays } from "@/lib/sla";
+import { autoCompleteMilestone } from "@/lib/milestones";
 
 async function getCapexId(prjId: string) {
   const c = await db.capexRequest.findFirst({
@@ -84,7 +86,6 @@ export async function PUT(
 
   let capexId = await getCapexId(params.prjId);
   if (!capexId) {
-    // Create a minimal capex request so milestones can be tracked
     const capex = await db.capexRequest.create({
       data: {
         projectId: params.prjId,
@@ -97,14 +98,35 @@ export async function PUT(
     capexId = capex.id;
   }
 
+  // Fetch activity for SLA calculation
+  const activity = await db.milestoneActivity.findUnique({
+    where: { id: milestoneActivityId },
+    select: { sla: true, dayType: true, phaseNumber: true },
+  });
+
+  const startDate = data.startDate ? new Date(data.startDate) : null;
+  const completedDate = data.completedDate ? new Date(data.completedDate) : null;
+
+  // Auto-compute dueDate from startDate + SLA when not explicitly provided
+  let dueDate = data.dueDate ? new Date(data.dueDate) : null;
+  if (!dueDate && startDate && activity?.sla) {
+    dueDate = addSLADays(startDate, activity.sla, activity.dayType);
+  }
+
+  // Direct-completion rule: if Completed with no startDate, both dates = completedDate
+  const effectiveStartDate =
+    data.status === "Completed" && !startDate && completedDate
+      ? completedDate
+      : startDate;
+
   const updateData = {
     status: data.status as Status | undefined,
     assignedTo: data.assignedTo || null,
-    startDate: data.startDate ? new Date(data.startDate) : null,
-    endDate: data.endDate ? new Date(data.endDate) : null,
-    dueDate: data.dueDate ? new Date(data.dueDate) : null,
+    startDate: effectiveStartDate,
+    endDate: completedDate,
+    dueDate,
     plannedEndDate: data.plannedEndDate ? new Date(data.plannedEndDate) : null,
-    completedDate: data.completedDate ? new Date(data.completedDate) : null,
+    completedDate,
     remarks: data.remarks || null,
     isActive: true,
     updatedById: userId,
@@ -156,18 +178,35 @@ export async function PUT(
       select: { name: true, prjNumber: true },
     });
     if (assignee?.email && project && activity) {
+      const phaseNames: Record<number, string> = {
+        1: "Phase 1 – Initiation",
+        2: "Phase 2 – Planning & Approval",
+        3: "Phase 3 – Design & Order",
+        4: "Phase 4 – Implementation / Build-Out",
+        5: "Phase 5 – Site Ready",
+      };
+      // Fetch Business PM email for CC
+      const bpmCc = await db.capexRequestBusinessPm.findFirst({
+        where: { capExRequestId: capexId },
+        select: { itPmId: true },
+      });
+      const bpmCcEmail = bpmCc?.itPmId
+        ? (await db.user.findUnique({ where: { id: bpmCc.itPmId }, select: { email: true } }))?.email
+        : undefined;
       sendEmail(
         milestoneAssignedEmail({
           to: assignee.email,
+          cc: bpmCcEmail ?? undefined,
           assigneeName: assignee.name,
           milestoneLabel: activity.label,
           projectName: project.name,
           projectNumber: project.prjNumber,
           prjId: params.prjId,
           phaseNumber: activity.phaseNumber,
-          dueDate: record.dueDate
-            ? new Date(record.dueDate).toLocaleDateString("en-US")
-            : undefined,
+          phaseName: phaseNames[activity.phaseNumber],
+          assignedDate: new Date().toLocaleDateString("en-US"),
+          dueDate: record.dueDate ? new Date(record.dueDate).toLocaleDateString("en-US") : undefined,
+          plannedEndDate: record.plannedEndDate ? new Date(record.plannedEndDate).toLocaleDateString("en-US") : undefined,
         })
       ).catch(() => {});
     }
@@ -220,6 +259,32 @@ export async function PUT(
             data: { phase: phaseOrder[currentIndex + 1] as any },
           });
         }
+      }
+    }
+  }
+
+  // Auto-complete "Go Live Completed" when all Phase 5 manual milestones are done
+  if (data.status === "Completed" && activity?.phaseNumber === 5) {
+    const phase5Activities = await db.milestoneActivity.findMany({
+      where: { isActive: true, phaseNumber: 5 },
+      select: { id: true, label: true },
+    });
+    const manualPhase5 = phase5Activities.filter((a) => !a.label.includes("Go Live"));
+    if (manualPhase5.length > 0) {
+      const phase5Tracking = await db.milestoneActivitiesTracking.findMany({
+        where: {
+          capExRequestId: capexId,
+          milestoneActivitiesId: { in: manualPhase5.map((a) => a.id) },
+          isActive: true,
+        },
+        select: { milestoneActivitiesId: true, status: true },
+      });
+      const completedIds = new Set(
+        phase5Tracking.filter((t) => t.status === "Completed").map((t) => t.milestoneActivitiesId)
+      );
+      const allManualDone = manualPhase5.every((a) => completedIds.has(a.id));
+      if (allManualDone) {
+        await autoCompleteMilestone(capexId, params.prjId, "Go Live Completed", userId);
       }
     }
   }

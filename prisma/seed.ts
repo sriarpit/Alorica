@@ -39,32 +39,36 @@ const PROJECT_TYPES = [
 ];
 
 const MILESTONE_ACTIVITIES = [
+  // Phase 1 — Initiation (ServiceNow auto-milestones)
+  { label: "Client Need Identified",       order: 1,  phaseNumber: 1, phaseName: "Initiation",             sla: 0,  sourceSystem: "ServiceNow" as const, dayType: "businessdays" as const },
+  { label: "Business Case Formulation",    order: 2,  phaseNumber: 1, phaseName: "Initiation",             sla: 0,  sourceSystem: "ServiceNow" as const, dayType: "businessdays" as const },
   // Phase 2 — Planning & Approval
-  { label: "Sourcing Kickoff", order: 1, phaseNumber: 2, phaseName: "PlanningApproval", sla: 3, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "CapEx Form Initiated", order: 2, phaseNumber: 2, phaseName: "PlanningApproval", sla: 5, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "IT CapEx Approved", order: 3, phaseNumber: 2, phaseName: "PlanningApproval", sla: 7, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "Facilities CapEx Approved", order: 4, phaseNumber: 2, phaseName: "PlanningApproval", sla: 7, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "Finance Review Completed", order: 5, phaseNumber: 2, phaseName: "PlanningApproval", sla: 10, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "Executive Committee Approval", order: 6, phaseNumber: 2, phaseName: "PlanningApproval", sla: 14, sourceSystem: "OutSystems" as const, dayType: "calendardays" as const },
-  { label: "CapEx ID Created", order: 7, phaseNumber: 2, phaseName: "PlanningApproval", sla: 3, sourceSystem: "EDL_Oracle" as const, dayType: "businessdays" as const },
+  { label: "Facility – Lease Signed",                       order: 3,  phaseNumber: 2, phaseName: "PlanningApproval", sla: 15, sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "Sourcing Kickoff",                                   order: 4,  phaseNumber: 2, phaseName: "PlanningApproval", sla: 15, sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "Sourcing Information Received",                      order: 5,  phaseNumber: 2, phaseName: "PlanningApproval", sla: 15, sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "CAPEX Form Initiated",                               order: 6,  phaseNumber: 2, phaseName: "PlanningApproval", sla: 3,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "CapEx / ROM Initiated & Approved – IT",         order: 7,  phaseNumber: 2, phaseName: "PlanningApproval", sla: 7,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "CapEx / ROM Initiated & Approved – Facilities", order: 8,  phaseNumber: 2, phaseName: "PlanningApproval", sla: 7,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "CapEx / ROM Initiated & Approved – Security",   order: 9,  phaseNumber: 2, phaseName: "PlanningApproval", sla: 7,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "Finance Approval Initiated",                         order: 10, phaseNumber: 2, phaseName: "PlanningApproval", sla: 5,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "VP Finance Approval",                                order: 11, phaseNumber: 2, phaseName: "PlanningApproval", sla: 3,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "EC Committee Approval",                              order: 12, phaseNumber: 2, phaseName: "PlanningApproval", sla: 5,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "CAPEX ID Generated",                                 order: 13, phaseNumber: 2, phaseName: "PlanningApproval", sla: 1,  sourceSystem: "EDL_Oracle"  as const, dayType: "businessdays" as const },
   // Phase 3 — Design & Order
-  { label: "Facility — Lease Signed", order: 8, phaseNumber: 3, phaseName: "DesignOrder", sla: 30, sourceSystem: "Facilities" as const, dayType: "calendardays" as const },
-  { label: "IT Design Completed", order: 9, phaseNumber: 3, phaseName: "DesignOrder", sla: 14, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "IT Orders Placed", order: 10, phaseNumber: 3, phaseName: "DesignOrder", sla: 5, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "Facilities Orders Placed", order: 11, phaseNumber: 3, phaseName: "DesignOrder", sla: 5, sourceSystem: "Facilities" as const, dayType: "businessdays" as const },
-  { label: "Security Orders Placed", order: 12, phaseNumber: 3, phaseName: "DesignOrder", sla: 5, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  // Phase 4 — Implementation
-  { label: "Construction Started", order: 13, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 60, sourceSystem: "Facilities" as const, dayType: "calendardays" as const },
-  { label: "IT Room Build Completed", order: 14, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 14, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "IT Equipment Delivered", order: 15, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 7, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "Construction Completed", order: 16, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 90, sourceSystem: "Facilities" as const, dayType: "calendardays" as const },
-  { label: "IT Deployment Completed", order: 17, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 10, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
+  { label: "Connected Utility",                  order: 14, phaseNumber: 3, phaseName: "DesignOrder", sla: 30, sourceSystem: "Facilities" as const, dayType: "calendardays" as const },
+  { label: "IT Room (MDF / IDF) Build Out",      order: 15, phaseNumber: 3, phaseName: "DesignOrder", sla: 30, sourceSystem: "Facilities" as const, dayType: "calendardays" as const },
+  { label: "IT Equipment Orders Received",       order: 16, phaseNumber: 3, phaseName: "DesignOrder", sla: 14, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
+  { label: "IT Network Link Orders Received",    order: 17, phaseNumber: 3, phaseName: "DesignOrder", sla: 14, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
+  { label: "IT Security System Orders Received", order: 18, phaseNumber: 3, phaseName: "DesignOrder", sla: 14, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
+  // Phase 4 — Implementation / Build-Out
+  { label: "IT PCs Received",                order: 19, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 7,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "IT Deployment Completed",        order: 20, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 10, sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "Network Setup Completed",        order: 21, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 7,  sourceSystem: "OutSystems"  as const, dayType: "businessdays" as const },
+  { label: "Security Installation Completed",order: 22, phaseNumber: 4, phaseName: "Implementation_BuildOut", sla: 10, sourceSystem: "Facilities"  as const, dayType: "businessdays" as const },
   // Phase 5 — Site Ready
-  { label: "Facility Work Completed", order: 18, phaseNumber: 5, phaseName: "SiteReady", sla: 5, sourceSystem: "Facilities" as const, dayType: "businessdays" as const },
-  { label: "IT Orders Received", order: 19, phaseNumber: 5, phaseName: "SiteReady", sla: 3, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "Client IT — PCs Deployed", order: 20, phaseNumber: 5, phaseName: "SiteReady", sla: 5, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "IT Handover To Client PM", order: 21, phaseNumber: 5, phaseName: "SiteReady", sla: 2, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
-  { label: "Site Ready Sign-Off", order: 22, phaseNumber: 5, phaseName: "SiteReady", sla: 1, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
+  { label: "Client IT – PCs Deployed", order: 23, phaseNumber: 5, phaseName: "SiteReady", sla: 5, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
+  { label: "IT Handover to Client PM",       order: 24, phaseNumber: 5, phaseName: "SiteReady", sla: 2, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
+  { label: "Go Live Completed",              order: 25, phaseNumber: 5, phaseName: "SiteReady", sla: 1, sourceSystem: "OutSystems" as const, dayType: "businessdays" as const },
 ];
 
 function makeUsername(roleName: string): string {

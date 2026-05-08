@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronRight, Save, Clock } from "lucide-react";
+import { FileUploadZone } from "@/components/capex/FileUploadZone";
+import { getRiskStatus } from "@/lib/sla";
 import { cn } from "@/lib/utils";
 
 export interface MilestoneActivity {
@@ -41,20 +43,28 @@ export interface MilestoneTracking {
   isActive: boolean;
 }
 
+interface Attachment {
+  id: string;
+  fileName: string;
+  fileContent: string;
+}
+
 interface Props {
   activity: MilestoneActivity;
   tracking: MilestoneTracking | null;
   users: { id: string; name: string; email: string }[];
   prjId: string;
-  readOnly?: boolean;
+  capexId: string | null;
+  canEdit: boolean;
+  initialDocs?: Attachment[];
+  initialImages?: Attachment[];
   onSaved?: (activityId: number, tracking: MilestoneTracking) => void;
 }
 
 const STATUS_OPTIONS = [
   { value: "Pending", label: "Pending" },
-  { value: "WorkinProgress", label: "Work in Progress" },
+  { value: "WorkinProgress", label: "In Progress" },
   { value: "Completed", label: "Completed" },
-  { value: "Delayed", label: "Delayed" },
 ];
 
 function statusVariant(status: string): "pending" | "in-progress" | "completed" | "delayed" | "on-time" {
@@ -64,15 +74,8 @@ function statusVariant(status: string): "pending" | "in-progress" | "completed" 
   return "pending";
 }
 
-function isOnTime(tracking: MilestoneTracking | null): boolean | null {
-  if (!tracking) return null;
-  if (tracking.status === "Completed" && tracking.completedDate && tracking.dueDate) {
-    return new Date(tracking.completedDate) <= new Date(tracking.dueDate);
-  }
-  if (tracking.dueDate && tracking.status !== "Completed") {
-    return new Date(tracking.dueDate) >= new Date();
-  }
-  return null;
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export function MilestoneAccordionItem({
@@ -80,7 +83,10 @@ export function MilestoneAccordionItem({
   tracking: initialTracking,
   users,
   prjId,
-  readOnly = false,
+  capexId,
+  canEdit,
+  initialDocs = [],
+  initialImages = [],
   onSaved,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -89,7 +95,6 @@ export function MilestoneAccordionItem({
     status: initialTracking?.status ?? "Pending",
     assignedTo: initialTracking?.assignedTo ?? "",
     startDate: initialTracking?.startDate?.slice(0, 10) ?? "",
-    endDate: initialTracking?.endDate?.slice(0, 10) ?? "",
     dueDate: initialTracking?.dueDate?.slice(0, 10) ?? "",
     plannedEndDate: initialTracking?.plannedEndDate?.slice(0, 10) ?? "",
     completedDate: initialTracking?.completedDate?.slice(0, 10) ?? "",
@@ -100,6 +105,22 @@ export function MilestoneAccordionItem({
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+    setSaved(false);
+  }
+
+  function handleStatusChange(value: string) {
+    const newStatus = value === "_none" ? "Pending" : value;
+    setForm((f) => {
+      const next = { ...f, status: newStatus };
+      if (newStatus === "WorkinProgress" && !f.startDate) {
+        next.startDate = today();
+      }
+      if (newStatus === "Completed") {
+        if (!f.startDate) next.startDate = today();
+        if (!f.completedDate) next.completedDate = today();
+      }
+      return next;
+    });
     setSaved(false);
   }
 
@@ -115,7 +136,6 @@ export function MilestoneAccordionItem({
           ...form,
           assignedTo: form.assignedTo || null,
           startDate: form.startDate || null,
-          endDate: form.endDate || null,
           dueDate: form.dueDate || null,
           plannedEndDate: form.plannedEndDate || null,
           completedDate: form.completedDate || null,
@@ -133,7 +153,12 @@ export function MilestoneAccordionItem({
     }
   }
 
-  const onTimeStatus = isOnTime(tracking);
+  const riskStatus = getRiskStatus(
+    tracking?.dueDate ?? null,
+    tracking?.completedDate ?? null,
+    tracking?.status ?? "Pending"
+  );
+  const showImages = activity.phaseNumber === 4 || activity.phaseNumber === 5;
 
   return (
     <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
@@ -145,15 +170,12 @@ export function MilestoneAccordionItem({
         )}
         onClick={() => setOpen((o) => !o)}
       >
-        {/* Order number */}
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#0f1e35]/10 text-xs font-semibold text-[#0f1e35]">
           {activity.order}
         </span>
 
-        {/* Label */}
         <span className="flex-1 font-medium text-sm text-gray-800">{activity.label}</span>
 
-        {/* Meta tags */}
         <div className="flex items-center gap-2 shrink-0">
           {activity.sla && (
             <span className="flex items-center gap-1 text-xs text-gray-400">
@@ -171,9 +193,15 @@ export function MilestoneAccordionItem({
               {STATUS_OPTIONS.find((s) => s.value === tracking.status)?.label ?? tracking.status}
             </Badge>
           )}
-          {onTimeStatus !== null && (
-            <Badge variant={onTimeStatus ? "on-time" : "delayed"}>
-              {onTimeStatus ? "On Time" : "Delayed"}
+          {riskStatus && (
+            <Badge
+              variant={
+                riskStatus === "On Time" ? "on-time"
+                : riskStatus === "On Risk" ? "at-risk"
+                : "delayed"
+              }
+            >
+              {riskStatus}
             </Badge>
           )}
           {open ? (
@@ -187,9 +215,9 @@ export function MilestoneAccordionItem({
       {/* Expanded content */}
       {open && (
         <div className="p-5 bg-gray-50/30 space-y-5">
-          {readOnly && (
+          {activity.sourceSystem === "ServiceNow" && (
             <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded px-3 py-2">
-              This phase is read-only (source: ServiceNow).
+              This milestone is managed by ServiceNow (read-only).
             </div>
           )}
 
@@ -200,7 +228,7 @@ export function MilestoneAccordionItem({
               <Select
                 value={form.assignedTo}
                 onValueChange={(v) => set("assignedTo", v === "_none" ? "" : v)}
-                disabled={readOnly}
+                disabled={!canEdit}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Assign owner..." />
@@ -226,8 +254,8 @@ export function MilestoneAccordionItem({
               <Label className="text-sm font-medium text-gray-700">Status</Label>
               <Select
                 value={form.status}
-                onValueChange={(v) => set("status", v)}
-                disabled={readOnly}
+                onValueChange={handleStatusChange}
+                disabled={!canEdit}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -256,7 +284,7 @@ export function MilestoneAccordionItem({
                 type="date"
                 value={form.dueDate}
                 onChange={(e) => set("dueDate", e.target.value)}
-                disabled={readOnly}
+                disabled={!canEdit}
               />
             </div>
 
@@ -267,7 +295,7 @@ export function MilestoneAccordionItem({
                 type="date"
                 value={form.startDate}
                 onChange={(e) => set("startDate", e.target.value)}
-                disabled={readOnly}
+                disabled={!canEdit}
               />
             </div>
 
@@ -278,7 +306,7 @@ export function MilestoneAccordionItem({
                 type="date"
                 value={form.plannedEndDate}
                 onChange={(e) => set("plannedEndDate", e.target.value)}
-                disabled={readOnly}
+                disabled={!canEdit}
               />
             </div>
 
@@ -289,7 +317,7 @@ export function MilestoneAccordionItem({
                 type="date"
                 value={form.completedDate}
                 onChange={(e) => set("completedDate", e.target.value)}
-                disabled={readOnly}
+                disabled={!canEdit}
               />
             </div>
           </div>
@@ -302,12 +330,12 @@ export function MilestoneAccordionItem({
               onChange={(e) => set("remarks", e.target.value)}
               placeholder="Add remarks or notes about this milestone..."
               rows={2}
-              disabled={readOnly}
+              disabled={!canEdit}
             />
           </div>
 
           {/* Save button */}
-          {!readOnly && (
+          {canEdit && (
             <div className="flex items-center gap-3 justify-end pt-1">
               {saved && (
                 <span className="text-xs text-green-600 font-medium">Saved successfully</span>
@@ -321,6 +349,32 @@ export function MilestoneAccordionItem({
                 <Save className="h-3.5 w-3.5" />
                 {saving ? "Saving..." : "Save"}
               </Button>
+            </div>
+          )}
+
+          {/* Attachments — only when capexId exists */}
+          {capexId && (
+            <div className="space-y-4 pt-2 border-t border-gray-100">
+              <FileUploadZone
+                capExRequestId={capexId}
+                sectionId="MilestoneActivitesFileupload"
+                secondaryId={String(activity.id)}
+                initialAttachments={initialDocs}
+                disabled={!canEdit}
+                label="Supported Documents"
+              />
+
+              {showImages && (
+                <FileUploadZone
+                  capExRequestId={capexId}
+                  sectionId="MilestoneActivitesImageFileUpload"
+                  secondaryId={String(activity.id)}
+                  initialAttachments={initialImages}
+                  disabled={!canEdit}
+                  label="Site Progress Images"
+                  accept="image/png,image/jpg,image/jpeg"
+                />
+              )}
             </div>
           )}
         </div>

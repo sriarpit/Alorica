@@ -5,9 +5,17 @@ import { MilestoneAccordionItem, type MilestoneActivity, type MilestoneTracking 
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
+interface Attachment {
+  id: string;
+  fileName: string;
+  fileContent: string;
+}
+
 export interface MilestoneRow {
   activity: MilestoneActivity;
   tracking: MilestoneTracking | null;
+  initialDocs?: Attachment[];
+  initialImages?: Attachment[];
 }
 
 interface Props {
@@ -17,8 +25,12 @@ interface Props {
   phaseColor: string;
   rows: MilestoneRow[];
   users: { id: string; name: string; email: string }[];
-  readOnly?: boolean;
+  capexId: string | null;
+  userRoles: string[];
+  currentUserId: string;
 }
+
+const MANAGERS = ["Governance Manager", "Business Manager"];
 
 export function MilestonesPhaseClient({
   prjId,
@@ -27,7 +39,9 @@ export function MilestonesPhaseClient({
   phaseColor,
   rows,
   users,
-  readOnly = false,
+  capexId,
+  userRoles,
+  currentUserId,
 }: Props) {
   const [trackingMap, setTrackingMap] = useState<Record<number, MilestoneTracking>>(() => {
     const m: Record<number, MilestoneTracking> = {};
@@ -36,6 +50,8 @@ export function MilestonesPhaseClient({
     }
     return m;
   });
+
+  const isManager = userRoles.some((r) => MANAGERS.includes(r));
 
   function handleSaved(activityId: number, tracking: MilestoneTracking) {
     setTrackingMap((prev) => ({ ...prev, [activityId]: tracking }));
@@ -88,17 +104,26 @@ export function MilestonesPhaseClient({
 
       {/* Milestone accordions */}
       <div className="space-y-2">
-        {rows.map((row) => (
-          <MilestoneAccordionItem
-            key={row.activity.id}
-            activity={row.activity}
-            tracking={trackingMap[row.activity.id] ?? row.tracking}
-            users={users}
-            prjId={prjId}
-            readOnly={readOnly}
-            onSaved={handleSaved}
-          />
-        ))}
+        {rows.map((row) => {
+          const currentTracking = trackingMap[row.activity.id] ?? row.tracking;
+          const canEdit =
+            isManager ||
+            currentTracking?.assignedTo === currentUserId;
+          return (
+            <MilestoneAccordionItem
+              key={row.activity.id}
+              activity={row.activity}
+              tracking={currentTracking}
+              users={users}
+              prjId={prjId}
+              capexId={capexId}
+              canEdit={canEdit}
+              initialDocs={row.initialDocs ?? []}
+              initialImages={row.initialImages ?? []}
+              onSaved={handleSaved}
+            />
+          );
+        })}
       </div>
     </div>
   );
