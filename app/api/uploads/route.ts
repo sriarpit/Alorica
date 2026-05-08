@@ -8,11 +8,15 @@ import { FileUploadType } from "@prisma/client";
 // Max 10 MB
 const MAX_SIZE = 10 * 1024 * 1024;
 
+// General document/attachment allowed extensions
 const ALLOWED_EXTS = new Set([
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".png", ".jpg", ".jpeg", ".gif", ".webp",
-  ".zip", ".csv", ".txt",
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+  ".png", ".jpg", ".jpeg",
+  ".zip",
 ]);
+
+// Milestone site images: images only
+const MILESTONE_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg"]);
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -40,8 +44,11 @@ export async function POST(req: NextRequest) {
   }
 
   const ext = extname(file.name).toLowerCase();
-  if (!ALLOWED_EXTS.has(ext)) {
-    return Response.json({ error: `File type ${ext} is not allowed` }, { status: 415 });
+  const isSiteImage = sectionId === "MilestoneActivitesImageFileUpload";
+  const allowedSet = isSiteImage ? MILESTONE_IMAGE_EXTS : ALLOWED_EXTS;
+  if (!allowedSet.has(ext)) {
+    const allowed = isSiteImage ? "PNG, JPG, JPEG" : "PDF, DOCX, XLSX, PNG, JPG, ZIP";
+    return Response.json({ error: `File type ${ext} is not allowed. Allowed: ${allowed}` }, { status: 415 });
   }
 
   // Build safe storage path: /public/uploads/[capExRequestId]/[sectionId]/[timestamp]-[filename]

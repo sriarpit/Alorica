@@ -3,7 +3,10 @@ import { db } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendEmail } from "@/lib/email/mailer";
 import { financeNotificationEmail, capexIdGeneratedEmail, financeApproverAssignedEmail } from "@/lib/email/templates";
-import { autoCompleteMilestone } from "@/lib/milestones";
+import { autoCompleteMilestone, autoStartMilestone } from "@/lib/milestones";
+import { generateCapExId } from "@/lib/edl-api/mock";
+
+const EC_THRESHOLD = 25_000;
 
 async function getCapexId(prjId: string) {
   const c = await db.capexRequest.findFirst({
@@ -11,6 +14,106 @@ async function getCapexId(prjId: string) {
     select: { id: true },
   });
   return c?.id ?? null;
+}
+
+/** Computes grand total from section details (IT + Facilities + Security). */
+async function getGrandTotal(capexId: string): Promise<number> {
+  const sd = await db.capexSectionDetails.findUnique({
+    where: { capExRequestId: capexId },
+    select: {
+      infrastructureCostTotal: true,
+      eusCostTotal: true,
+      capitalLaborCostTotal: true,
+      construction: true,
+      electricalCabling: true,
+      furnitureFixture: true,
+      others: true,
+      tenantImprovementAllowance: true,
+      securityTotal: true,
+    },
+  });
+  if (!sd) return 0;
+  const n = (v: unknown) => Number(v) || 0;
+  return (
+    n(sd.infrastructureCostTotal) +
+    n(sd.eusCostTotal) +
+    n(sd.capitalLaborCostTotal) +
+    n(sd.construction) +
+    n(sd.electricalCabling) +
+    n(sd.furnitureFixture) +
+    n(sd.others) +
+    n(sd.tenantImprovementAllowance) +
+    n(sd.securityTotal)
+  );
+}
+
+/** Generates CapEx ID, saves to finance record, sends email, completes milestone. */
+async function triggerCapExIdGeneration(
+  capexId: string,
+  prjId: string,
+  project: { name: string; prjNumber: string },
+  userId?: string
+): Promise<string> {
+  const capexReq = await db.capexRequest.findUnique({
+    where: { id: capexId },
+    include: {
+      projectManager: { select: { email: true } },
+      businessRequester: { select: { email: true } },
+      businessPm: { select: { itPmId: true, facilitiesPmId: true } },
+      relatedCapex: { select: { capExNo: true } },
+    },
+  });
+
+  const generatedId = generateCapExId(project.prjNumber);
+
+  // Save to finance record
+  await db.capexFinanceApproval.upsert({
+    where: { capExRequestId: capexId },
+    create: { capExRequestId: capexId, projectCapex: generatedId, createdBy: userId },
+    update: { projectCapex: generatedId, updatedBy: userId },
+  });
+
+  // Complete the CapEx ID milestone
+  await autoCompleteMilestone(capexId, prjId, "CAPEX ID Generated", userId);
+
+  // Build recipient list
+  const functionalLeaders = await db.user.findMany({
+    where: {
+      isActive: true,
+      userRoles: { some: { role: { name: { in: ["IT Manager", "Facilities Manager", "Security Manager"] } } } },
+    },
+    select: { email: true },
+  });
+
+  const pmIds = [
+    capexReq?.businessPm?.itPmId,
+    capexReq?.businessPm?.facilitiesPmId,
+  ].filter(Boolean) as string[];
+  const pmUsers = pmIds.length
+    ? await db.user.findMany({ where: { id: { in: pmIds }, isActive: true }, select: { email: true } })
+    : [];
+
+  const toSet = new Set<string>();
+  if (capexReq?.businessRequester?.email) toSet.add(capexReq.businessRequester.email);
+  if (capexReq?.projectManager?.email) toSet.add(capexReq.projectManager.email);
+  pmUsers.forEach((u) => toSet.add(u.email));
+  functionalLeaders.forEach((u) => u.email && toSet.add(u.email));
+
+  if (toSet.size > 0) {
+    sendEmail(
+      capexIdGeneratedEmail({
+        to: Array.from(toSet),
+        capexId: generatedId,
+        projectName: project.name,
+        projectNumber: project.prjNumber,
+        prjId,
+        generatedDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+        relatedCapexIds: capexReq?.relatedCapex?.map((r) => r.capExNo).filter((id): id is string => id !== null) ?? [],
+      })
+    ).catch(() => {});
+  }
+
+  return generatedId;
 }
 
 export async function GET(
@@ -44,7 +147,6 @@ export async function PUT(
     return Response.json({ error: "No CapEx request found" }, { status: 404 });
   }
 
-  // Check existing record so we can detect first-time submission and new CapEx ID
   const existing = await db.capexFinanceApproval.findUnique({
     where: { capExRequestId: capexId },
     select: {
@@ -52,15 +154,14 @@ export async function PUT(
       isBudget: true,
       regCorpFinanceApproverId: true,
       vpFinanceApproverId: true,
+      regionalApprovalStatusId: true,
+      vpFinanceApprovalStatusId: true,
     },
   });
 
-  // Parse ISO date strings to Date objects
-  const dateFields = ["regCorpApproverDate", "vpApprovedDate"];
-  for (const field of dateFields) {
-    if (body[field] !== undefined) {
-      body[field] = body[field] ? new Date(body[field] as string) : null;
-    }
+  // Parse ISO date strings
+  for (const f of ["regCorpApproverDate", "vpApprovedDate"]) {
+    if (body[f] !== undefined) body[f] = body[f] ? new Date(body[f] as string) : null;
   }
 
   const fa = await db.capexFinanceApproval.upsert({
@@ -74,24 +175,16 @@ export async function PUT(
     select: { name: true, prjNumber: true },
   });
 
-  // Email #8 — RC Finance Approver newly assigned
+  // Email — RC Finance Approver newly assigned
   if (body.regCorpFinanceApproverId && body.regCorpFinanceApproverId !== existing?.regCorpFinanceApproverId && project) {
     const rcApprover = await db.user.findUnique({
       where: { id: body.regCorpFinanceApproverId as string },
       select: { name: true, email: true },
     });
-    const bpm = await db.capexRequestBusinessPm.findUnique({
-      where: { capExRequestId: capexId },
-      select: { itPmId: true },
-    });
-    const bpmCcEmail = bpm?.itPmId
-      ? (await db.user.findUnique({ where: { id: bpm.itPmId }, select: { email: true } }))?.email
-      : undefined;
     if (rcApprover?.email) {
       sendEmail(
         financeApproverAssignedEmail({
           to: rcApprover.email,
-          cc: bpmCcEmail ?? undefined,
           approverName: rcApprover.name,
           role: "RC Finance Approver",
           projectName: project.name,
@@ -102,24 +195,16 @@ export async function PUT(
     }
   }
 
-  // Email #9 — VP Finance Approver newly assigned
+  // Email — VP Finance Approver newly assigned
   if (body.vpFinanceApproverId && body.vpFinanceApproverId !== existing?.vpFinanceApproverId && project) {
     const vpApprover = await db.user.findUnique({
       where: { id: body.vpFinanceApproverId as string },
       select: { name: true, email: true },
     });
-    const bpm = await db.capexRequestBusinessPm.findUnique({
-      where: { capExRequestId: capexId },
-      select: { itPmId: true },
-    });
-    const bpmCcEmail = bpm?.itPmId
-      ? (await db.user.findUnique({ where: { id: bpm.itPmId }, select: { email: true } }))?.email
-      : undefined;
     if (vpApprover?.email) {
       sendEmail(
         financeApproverAssignedEmail({
           to: vpApprover.email,
-          cc: bpmCcEmail ?? undefined,
           approverName: vpApprover.name,
           role: "VP Finance Approver",
           projectName: project.name,
@@ -134,14 +219,10 @@ export async function PUT(
   if (body.isBudget !== undefined && existing?.isBudget === undefined && project) {
     const financeLeads = await db.user
       .findMany({
-        where: {
-          isActive: true,
-          userRoles: { some: { role: { name: "Finance Lead" } } },
-        },
+        where: { isActive: true, userRoles: { some: { role: { name: "Finance Lead" } } } },
         select: { email: true },
       })
       .then((u) => u.map((x) => x.email));
-
     if (financeLeads.length > 0) {
       sendEmail(
         financeNotificationEmail({
@@ -156,62 +237,39 @@ export async function PUT(
     }
   }
 
-  // Auto-complete system milestones based on approval events
-  if (body.regionalApprovalStatusId === "Approved" || body.statusRC === "Approved") {
+  // RC Finance Approved → complete "Finance Approval Initiated" milestone
+  const rcJustApproved =
+    (body.regionalApprovalStatusId === "Approved" || body.statusRC === "Approved") &&
+    existing?.regionalApprovalStatusId !== "Approved";
+  if (rcJustApproved) {
     await autoCompleteMilestone(capexId, params.prjId, "Finance Approval Initiated", userId);
   }
-  if (body.vpFinanceApprovalStatusId === "Approved" || body.statusVP === "Approved") {
+
+  // VP Finance Approved → complete "VP Finance Approval" milestone + $25K logic
+  const vpJustApproved =
+    (body.vpFinanceApprovalStatusId === "Approved" || body.statusVP === "Approved") &&
+    existing?.vpFinanceApprovalStatusId !== "Approved";
+
+  if (vpJustApproved && project) {
     await autoCompleteMilestone(capexId, params.prjId, "VP Finance Approval", userId);
-  }
-  if (body.projectCapex && !existing?.projectCapex) {
-    await autoCompleteMilestone(capexId, params.prjId, "CAPEX ID Generated", userId);
-  }
 
-  // Email #11 — CapEx ID generated — fires once when projectCapex is first set
-  if (body.projectCapex && !existing?.projectCapex && project) {
-    const [functionalLeaders, capexReq] = await Promise.all([
-      db.user.findMany({
-        where: {
-          isActive: true,
-          userRoles: { some: { role: { name: { in: ["IT Manager", "Facilities Manager", "Security Manager"] } } } },
-        },
-        select: { email: true },
-      }),
-      db.capexRequest.findUnique({
-        where: { id: capexId },
-        include: {
-          projectManager: { select: { email: true } },
-          businessRequester: { select: { email: true } },
-          businessPm: { select: { itPmId: true } },
-          relatedCapex: { select: { capExNo: true } },
-        },
-      }),
-    ]);
+    const grandTotal = await getGrandTotal(capexId);
 
-    const bpmItPmEmail = capexReq?.businessPm?.itPmId
-      ? (await db.user.findUnique({ where: { id: capexReq.businessPm.itPmId }, select: { email: true } }))?.email
-      : undefined;
-
-    const toEmails: string[] = [];
-    if (capexReq?.businessRequester?.email) toEmails.push(capexReq.businessRequester.email);
-    if (bpmItPmEmail)                       toEmails.push(bpmItPmEmail);
-    if (capexReq?.projectManager?.email)    toEmails.push(capexReq.projectManager.email);
-    functionalLeaders.forEach((u) => { if (u.email) toEmails.push(u.email); });
-    const allRecipients = Array.from(new Set(toEmails));
-
-    if (allRecipients.length > 0) {
-      sendEmail(
-        capexIdGeneratedEmail({
-          to: allRecipients,
-          capexId: body.projectCapex as string,
-          projectName: project.name,
-          projectNumber: project.prjNumber,
-          prjId: params.prjId,
-          generatedDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
-          relatedCapexIds: capexReq?.relatedCapex?.map((r) => r.capExNo).filter((id): id is string => id !== null) ?? [],
-        })
-      ).catch(() => {});
+    if (grandTotal <= EC_THRESHOLD) {
+      // ≤ $25K: no EC needed — auto-generate CapEx ID immediately
+      if (!existing?.projectCapex) {
+        await triggerCapExIdGeneration(capexId, params.prjId, project, userId);
+      }
+    } else {
+      // > $25K: activate EC Committee Approval milestone (InProgress)
+      await autoStartMilestone(capexId, params.prjId, "EC Committee Approval", userId);
     }
+  }
+
+  // Manual CapEx ID set (admin override) — still fires milestone completion + email
+  if (body.projectCapex && !existing?.projectCapex && !vpJustApproved) {
+    await autoCompleteMilestone(capexId, params.prjId, "CAPEX ID Generated", userId);
+    // Full email is handled inline when auto-generated; manual set just completes milestone
   }
 
   return Response.json(fa);

@@ -632,8 +632,21 @@ model MilestoneActivitiesTracking {
   milestoneActivity MilestoneActivity? @relation(fields: [milestoneActivitiesId], references: [id])
   assignee          User?              @relation("MilestoneAssignee", fields: [assignedTo], references: [id])
   updater           User?              @relation("MilestoneUpdater", fields: [updatedById], references: [id])
+  slaNotifications  SlaNotificationLog[]
 
   @@map("milestone_activities_tracking")
+}
+
+model SlaNotificationLog {
+  id         String   @id @default(cuid())
+  trackingId String
+  stage      String
+  sentAt     DateTime @default(now())
+
+  tracking MilestoneActivitiesTracking @relation(fields: [trackingId], references: [id], onDelete: Cascade)
+
+  @@unique([trackingId, stage])
+  @@map("sla_notification_log")
 }
 
 // ==================== SUPPORTING TABLES ====================

@@ -3,7 +3,7 @@ import { db } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendEmail } from "@/lib/email/mailer";
 import { leadershipApprovalEmail, leadApproverNotificationEmail, allSectionsApprovedEmail } from "@/lib/email/templates";
-import { autoCompleteMilestone } from "@/lib/milestones";
+import { autoCompleteMilestone, autoStartMilestone } from "@/lib/milestones";
 
 async function getCapexId(prjId: string) {
   const c = await db.capexRequest.findFirst({
@@ -228,19 +228,52 @@ export async function PUT(
   // Check if all selected sections are now approved → trigger Finance Team email
   await checkAndNotifyFinanceTeam(params.prjId, capexId, userId, section, data);
 
-  // Auto-complete ROM milestone when a section reaches ApprovedbyLeadership
+  // Complete ROM milestone when a section reaches ApprovedbyLeadership
   const sectionStatusField: Record<string, string> = {
     it: "infrastructureLeadStatus",
     facilities: "facilitiesStatus",
     security: "securityLeadApproveStatus",
   };
+  // Labels match the seeded milestone_activities exactly
   const sectionRomLabel: Record<string, string> = {
-    it: "Approved – IT",
-    facilities: "Approved – Facilities",
-    security: "Approved – Security",
+    it: "ROM Initiated & Approved – IT",
+    facilities: "ROM Initiated & Approved – Facilities",
+    security: "ROM Initiated & Approved – Security",
   };
   if (section && data[sectionStatusField[section]] === "ApprovedbyLeadership") {
     await autoCompleteMilestone(capexId, params.prjId, sectionRomLabel[section], userId);
+  }
+
+  // When all selected sections are approved → start "Finance Approval Initiated" milestone
+  // (Full notification is handled in checkAndNotifyFinanceTeam above)
+  if (section && data[sectionStatusField[section]] === "ApprovedbyLeadership") {
+    const bpmForStart = await db.capexRequestBusinessPm.findUnique({
+      where: { capExRequestId: capexId },
+      select: { isIt: true, isFacilities: true, isPhysicalSecurity: true },
+    });
+    if (bpmForStart) {
+      const latestSd = await db.capexSectionDetails.findUnique({
+        where: { capExRequestId: capexId },
+        select: {
+          infrastructureLeadStatus: true,
+          eusStatus: true,
+          capitalLaborLeadStatus: true,
+          facilitiesStatus: true,
+          securityLeadApproveStatus: true,
+        },
+      });
+      if (latestSd) {
+        const itOk = !bpmForStart.isIt ||
+          latestSd.infrastructureLeadStatus === "ApprovedbyLeadership" ||
+          latestSd.eusStatus === "ApprovedbyLeadership" ||
+          latestSd.capitalLaborLeadStatus === "ApprovedbyLeadership";
+        const facOk = !bpmForStart.isFacilities || latestSd.facilitiesStatus === "ApprovedbyLeadership";
+        const secOk = !bpmForStart.isPhysicalSecurity || latestSd.securityLeadApproveStatus === "ApprovedbyLeadership";
+        if (itOk && facOk && secOk) {
+          await autoStartMilestone(capexId, params.prjId, "Finance Approval Initiated", userId);
+        }
+      }
+    }
   }
 
   return Response.json(sd);

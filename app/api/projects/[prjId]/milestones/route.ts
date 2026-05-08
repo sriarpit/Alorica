@@ -16,6 +16,56 @@ async function getCapexId(prjId: string) {
   return c?.id ?? null;
 }
 
+/** Returns CC emails: Business PM + Functional Leadership + Governance Managers (deduped). */
+async function buildMilestoneCcList(capexId: string, excludeEmail?: string): Promise<string[]> {
+  const ccSet = new Set<string>();
+
+  // Business PM
+  const bpm = await db.capexRequestBusinessPm.findFirst({
+    where: { capExRequestId: capexId },
+    select: { itPmId: true, facilitiesPmId: true, physicalSecurityPmId: true },
+  });
+  if (bpm) {
+    const pmIds = [bpm.itPmId, bpm.facilitiesPmId, bpm.physicalSecurityPmId].filter(Boolean) as string[];
+    if (pmIds.length > 0) {
+      const pms = await db.user.findMany({
+        where: { id: { in: pmIds }, isActive: true },
+        select: { email: true },
+      });
+      pms.forEach((u) => ccSet.add(u.email));
+    }
+  }
+
+  // Functional Leadership + Governance Managers
+  const leaders = await db.user.findMany({
+    where: {
+      isActive: true,
+      userRoles: {
+        some: {
+          role: {
+            name: {
+              in: ["IT Leadership", "Facilities Leadership", "Security Leadership", "Governance Manager"],
+            },
+          },
+        },
+      },
+    },
+    select: { email: true },
+  });
+  leaders.forEach((u) => ccSet.add(u.email));
+
+  if (excludeEmail) ccSet.delete(excludeEmail);
+  return Array.from(ccSet);
+}
+
+const PHASE_NAMES: Record<number, string> = {
+  1: "Phase 1 – Initiation",
+  2: "Phase 2 – Planning & Approval",
+  3: "Phase 3 – Design & Order",
+  4: "Phase 4 – Implementation / Build-Out",
+  5: "Phase 5 – Site Ready",
+};
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { prjId: string } }
@@ -25,7 +75,6 @@ export async function GET(
 
   const capexId = await getCapexId(params.prjId);
 
-  // Fetch all milestone activities for the phase
   const activities = await db.milestoneActivity.findMany({
     where: {
       isActive: true,
@@ -34,7 +83,6 @@ export async function GET(
     orderBy: { order: "asc" },
   });
 
-  // Fetch existing tracking records for this capex request
   const trackingRecords = capexId
     ? await db.milestoneActivitiesTracking.findMany({
         where: {
@@ -98,26 +146,50 @@ export async function PUT(
     capexId = capex.id;
   }
 
-  // Fetch activity for SLA calculation
   const activity = await db.milestoneActivity.findUnique({
     where: { id: milestoneActivityId },
-    select: { sla: true, dayType: true, phaseNumber: true },
+    select: { sla: true, dayType: true, phaseNumber: true, label: true, order: true },
   });
 
   const startDate = data.startDate ? new Date(data.startDate) : null;
   const completedDate = data.completedDate ? new Date(data.completedDate) : null;
 
-  // Auto-compute dueDate from startDate + SLA when not explicitly provided
   let dueDate = data.dueDate ? new Date(data.dueDate) : null;
   if (!dueDate && startDate && activity?.sla) {
     dueDate = addSLADays(startDate, activity.sla, activity.dayType);
   }
 
-  // Direct-completion rule: if Completed with no startDate, both dates = completedDate
   const effectiveStartDate =
-    data.status === "Completed" && !startDate && completedDate
-      ? completedDate
-      : startDate;
+    data.status === "Completed" && !startDate && completedDate ? completedDate : startDate;
+
+  // Phase 3: auto-calculate plannedStartDate and plannedEndDate when moving to InProgress
+  let plannedEndDateOverride: Date | null = data.plannedEndDate ? new Date(data.plannedEndDate) : null;
+  if (
+    activity?.phaseNumber === 3 &&
+    data.status === "InProgress" &&
+    !data.plannedEndDate &&
+    activity.order &&
+    capexId
+  ) {
+    // Find the previous milestone's completedDate as plannedStartDate
+    const prevActivity = await db.milestoneActivity.findFirst({
+      where: { isActive: true, phaseNumber: 3, order: { lt: activity.order } },
+      orderBy: { order: "desc" },
+      select: { id: true },
+    });
+    if (prevActivity) {
+      const prevTracking = await db.milestoneActivitiesTracking.findFirst({
+        where: { capExRequestId: capexId, milestoneActivitiesId: prevActivity.id, isActive: true },
+        select: { completedDate: true },
+      });
+      if (prevTracking?.completedDate) {
+        const plannedStart = prevTracking.completedDate;
+        plannedEndDateOverride = activity.sla
+          ? addSLADays(plannedStart, activity.sla, activity.dayType)
+          : null;
+      }
+    }
+  }
 
   const updateData = {
     status: data.status as Status | undefined,
@@ -125,7 +197,7 @@ export async function PUT(
     startDate: effectiveStartDate,
     endDate: completedDate,
     dueDate,
-    plannedEndDate: data.plannedEndDate ? new Date(data.plannedEndDate) : null,
+    plannedEndDate: plannedEndDateOverride,
     completedDate,
     remarks: data.remarks || null,
     isActive: true,
@@ -133,14 +205,16 @@ export async function PUT(
     updateTime: new Date(),
   };
 
-  // Detect new assignee before saving (to send notification after)
+  // Detect assignment change before saving
   let previousAssignee: string | null = null;
-  if (trackingId && data.assignedTo) {
+  let previousStatus: Status | null = null;
+  if (trackingId) {
     const existing = await db.milestoneActivitiesTracking.findUnique({
       where: { id: trackingId },
-      select: { assignedTo: true },
+      select: { assignedTo: true, status: true },
     });
     previousAssignee = existing?.assignedTo ?? null;
+    previousStatus = existing?.status ?? null;
   }
 
   let record;
@@ -167,52 +241,72 @@ export async function PUT(
     });
   }
 
-  // Send assignment email if assignee is newly set
+  const assignee = (record as any).assignee as { name: string; email: string } | null;
+  const activityInfo = (record as any).milestoneActivity as { label: string; phaseNumber: number } | null;
+  const project = await db.project.findUnique({
+    where: { id: params.prjId },
+    select: { name: true, prjNumber: true },
+  });
+
+  const phaseNumber = activityInfo?.phaseNumber ?? activity?.phaseNumber ?? 2;
+  const phaseName = PHASE_NAMES[phaseNumber] ?? `Phase ${phaseNumber}`;
+  const ccList = await buildMilestoneCcList(capexId, assignee?.email ?? undefined);
+
+  // ── Assignment email ────────────────────────────────────────────────────────
   const newAssigneeId = data.assignedTo || null;
   const isNewAssignment = newAssigneeId && newAssigneeId !== previousAssignee;
-  if (isNewAssignment) {
-    const assignee = (record as any).assignee;
-    const activity = (record as any).milestoneActivity;
-    const project = await db.project.findUnique({
-      where: { id: params.prjId },
-      select: { name: true, prjNumber: true },
-    });
-    if (assignee?.email && project && activity) {
-      const phaseNames: Record<number, string> = {
-        1: "Phase 1 – Initiation",
-        2: "Phase 2 – Planning & Approval",
-        3: "Phase 3 – Design & Order",
-        4: "Phase 4 – Implementation / Build-Out",
-        5: "Phase 5 – Site Ready",
-      };
-      // Fetch Business PM email for CC
-      const bpmCc = await db.capexRequestBusinessPm.findFirst({
-        where: { capExRequestId: capexId },
-        select: { itPmId: true },
-      });
-      const bpmCcEmail = bpmCc?.itPmId
-        ? (await db.user.findUnique({ where: { id: bpmCc.itPmId }, select: { email: true } }))?.email
-        : undefined;
-      sendEmail(
-        milestoneAssignedEmail({
-          to: assignee.email,
-          cc: bpmCcEmail ?? undefined,
-          assigneeName: assignee.name,
-          milestoneLabel: activity.label,
-          projectName: project.name,
-          projectNumber: project.prjNumber,
-          prjId: params.prjId,
-          phaseNumber: activity.phaseNumber,
-          phaseName: phaseNames[activity.phaseNumber],
-          assignedDate: new Date().toLocaleDateString("en-US"),
-          dueDate: record.dueDate ? new Date(record.dueDate).toLocaleDateString("en-US") : undefined,
-          plannedEndDate: record.plannedEndDate ? new Date(record.plannedEndDate).toLocaleDateString("en-US") : undefined,
-        })
-      ).catch(() => {});
+  if (isNewAssignment && assignee?.email && project && activityInfo) {
+    sendEmail(
+      milestoneAssignedEmail({
+        to: assignee.email,
+        cc: ccList.length > 0 ? ccList : undefined,
+        assigneeName: assignee.name,
+        milestoneLabel: activityInfo.label,
+        projectName: project.name,
+        projectNumber: project.prjNumber,
+        prjId: params.prjId,
+        phaseNumber,
+        phaseName,
+        assignedDate: new Date().toLocaleDateString("en-US"),
+        dueDate: record.dueDate ? new Date(record.dueDate).toLocaleDateString("en-US") : undefined,
+        plannedEndDate: record.plannedEndDate ? new Date(record.plannedEndDate).toLocaleDateString("en-US") : undefined,
+      })
+    ).catch(() => {});
+  }
+
+  // ── Status-change emails ────────────────────────────────────────────────────
+  const newStatus = data.status as Status | undefined;
+  const statusChanged = newStatus && newStatus !== previousStatus;
+
+  if (statusChanged && project && activityInfo) {
+    const milestoneUrl = `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/projects/${params.prjId}/milestones/phase-${phaseNumber}`;
+
+    // Completed → notify CC (Governance Manager, Business PM, Functional Leadership)
+    if (newStatus === Status.Completed && ccList.length > 0) {
+      sendEmail({
+        to: ccList,
+        subject: `Milestone Completed — ${project.prjNumber}`,
+        html: `<p>The milestone <strong>${activityInfo.label}</strong> (${phaseName}) on project <strong>${project.prjNumber} — ${project.name}</strong> has been marked <strong>Completed</strong>${completedDate ? ` on ${completedDate.toLocaleDateString("en-US")}` : ""}.</p><p><a href="${milestoneUrl}">View Milestone</a></p>`,
+      }).catch(() => {});
+    }
+
+    // Delayed → notify assignee + CC
+    if (newStatus === Status.Delayed) {
+      const toList = [
+        ...(assignee?.email ? [assignee.email] : []),
+        ...ccList,
+      ];
+      if (toList.length > 0) {
+        sendEmail({
+          to: toList,
+          subject: `Milestone Delayed — ${project.prjNumber}`,
+          html: `<p>The milestone <strong>${activityInfo.label}</strong> (${phaseName}) on project <strong>${project.prjNumber} — ${project.name}</strong> has been marked <strong>Delayed</strong>. Immediate action required.</p><p><a href="${milestoneUrl}">View Milestone</a></p>`,
+        }).catch(() => {});
+      }
     }
   }
 
-  // Update project progress percentage based on all milestones
+  // ── Progress percentage ─────────────────────────────────────────────────────
   const allTracking = await db.milestoneActivitiesTracking.findMany({
     where: { capExRequestId: capexId, isActive: true },
     select: { status: true },
@@ -220,14 +314,13 @@ export async function PUT(
   const allActivities = await db.milestoneActivity.count({ where: { isActive: true } });
   if (allActivities > 0) {
     const completed = allTracking.filter((t) => t.status === "Completed").length;
-    const pct = Math.round((completed / allActivities) * 100);
     await db.project.update({
       where: { id: params.prjId },
-      data: { progressPct: pct },
+      data: { progressPct: Math.round((completed / allActivities) * 100) },
     });
   }
 
-  // Auto-advance project phase when all milestones in current phase are completed
+  // ── Auto-advance project phase ──────────────────────────────────────────────
   const currentProject = await db.project.findUnique({
     where: { id: params.prjId },
     select: { phase: true },
@@ -263,7 +356,7 @@ export async function PUT(
     }
   }
 
-  // Auto-complete "Go Live Completed" when all Phase 5 manual milestones are done
+  // ── Auto-complete "Go Live Completed" when all Phase 5 manual milestones done
   if (data.status === "Completed" && activity?.phaseNumber === 5) {
     const phase5Activities = await db.milestoneActivity.findMany({
       where: { isActive: true, phaseNumber: 5 },
@@ -293,7 +386,7 @@ export async function PUT(
     id: record.id,
     status: record.status,
     assignedTo: record.assignedTo,
-    assigneeName: (record as any).assignee?.name ?? null,
+    assigneeName: assignee?.name ?? null,
     startDate: record.startDate?.toISOString() ?? null,
     endDate: record.endDate?.toISOString() ?? null,
     dueDate: record.dueDate?.toISOString() ?? null,

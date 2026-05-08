@@ -138,6 +138,194 @@ export async function getMilestonePageData(prjId: string, phaseNumber: number) {
   return { project, rows, users, capexId: capex?.id ?? null };
 }
 
+// ─── Phase 1 auto-completion triggers ────────────────────────────────────────
+
+/**
+ * Auto-completes "Client Need Identification" (Phase 1, Milestone 1).
+ * Trigger: project record created (call immediately after project/capex creation).
+ */
+export async function autoCompleteClientNeedIdentification(
+  capexId: string,
+  projectId: string,
+  projectCreatedDate: Date,
+  userId?: string
+): Promise<void> {
+  const activity = await db.milestoneActivity.findFirst({
+    where: { isActive: true, phaseNumber: 1, label: { contains: "Client Need", mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (!activity) return;
+
+  const existing = await db.milestoneActivitiesTracking.findFirst({
+    where: { capExRequestId: capexId, milestoneActivitiesId: activity.id },
+    select: { id: true },
+  });
+
+  const data = {
+    status: "Completed" as const,
+    startDate: projectCreatedDate,
+    completedDate: projectCreatedDate,
+    isActive: true,
+    updatedById: userId,
+    updateTime: new Date(),
+  };
+
+  if (existing) {
+    await db.milestoneActivitiesTracking.update({ where: { id: existing.id }, data });
+  } else {
+    await db.milestoneActivitiesTracking.create({
+      data: { capExRequestId: capexId, milestoneActivitiesId: activity.id, ...data },
+    });
+  }
+}
+
+/**
+ * Auto-completes "Business Case Formulation" (Phase 1, Milestone 2).
+ * Trigger: project status changes to WorkInProgress.
+ * completionDate = the date the status change happened.
+ */
+export async function autoCompleteBusinessCaseFormulation(
+  capexId: string,
+  projectId: string,
+  completionDate: Date,
+  userId?: string
+): Promise<void> {
+  const activity = await db.milestoneActivity.findFirst({
+    where: { isActive: true, phaseNumber: 1, label: { contains: "Business Case Formul", mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (!activity) return;
+
+  const existing = await db.milestoneActivitiesTracking.findFirst({
+    where: { capExRequestId: capexId, milestoneActivitiesId: activity.id },
+    select: { id: true, startDate: true },
+  });
+
+  const data = {
+    status: "Completed" as const,
+    completedDate: completionDate,
+    isActive: true,
+    updatedById: userId,
+    updateTime: new Date(),
+  };
+
+  if (existing) {
+    await db.milestoneActivitiesTracking.update({ where: { id: existing.id }, data });
+  } else {
+    await db.milestoneActivitiesTracking.create({
+      data: { capExRequestId: capexId, milestoneActivitiesId: activity.id, startDate: completionDate, ...data },
+    });
+  }
+
+  // Refresh overall progress
+  await refreshProjectProgress(capexId, projectId);
+}
+
+/** Refreshes project progressPct based on completed milestones. */
+async function refreshProjectProgress(capexId: string, projectId: string): Promise<void> {
+  const [allTracking, totalActivities] = await Promise.all([
+    db.milestoneActivitiesTracking.findMany({
+      where: { capExRequestId: capexId, isActive: true },
+      select: { status: true },
+    }),
+    db.milestoneActivity.count({ where: { isActive: true } }),
+  ]);
+  if (totalActivities > 0) {
+    const completed = allTracking.filter((t) => t.status === "Completed").length;
+    await db.project.update({
+      where: { id: projectId },
+      data: { progressPct: Math.round((completed / totalActivities) * 100) },
+    });
+  }
+}
+
+// ─── Phase 2 auto-completion triggers ────────────────────────────────────────
+
+/**
+ * Auto-completes a Phase 2 milestone by label match.
+ * Used for: CapEx Form Initiated, IT/Facilities/Security ROM approvals,
+ *           Business Case Finance, EC, CapEx ID Creation.
+ */
+export async function autoCompletePhase2Milestone(
+  capexId: string,
+  projectId: string,
+  labelContains: string,
+  completionDate: Date,
+  userId?: string
+): Promise<void> {
+  const activity = await db.milestoneActivity.findFirst({
+    where: { isActive: true, phaseNumber: 2, label: { contains: labelContains, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (!activity) return;
+
+  const existing = await db.milestoneActivitiesTracking.findFirst({
+    where: { capExRequestId: capexId, milestoneActivitiesId: activity.id },
+    select: { id: true, startDate: true },
+  });
+
+  const data = {
+    status: "Completed" as const,
+    completedDate: completionDate,
+    isActive: true,
+    updatedById: userId,
+    updateTime: new Date(),
+  };
+
+  if (existing) {
+    await db.milestoneActivitiesTracking.update({ where: { id: existing.id }, data });
+  } else {
+    await db.milestoneActivitiesTracking.create({
+      data: { capExRequestId: capexId, milestoneActivitiesId: activity.id, startDate: completionDate, ...data },
+    });
+  }
+
+  await refreshProjectProgress(capexId, projectId);
+}
+
+// ─── Set a milestone to InProgress (start trigger) ───────────────────────────
+
+export async function autoStartMilestone(
+  capexId: string,
+  projectId: string,
+  labelContains: string,
+  userId?: string
+): Promise<void> {
+  const activity = await db.milestoneActivity.findFirst({
+    where: { isActive: true, label: { contains: labelContains, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (!activity) return;
+
+  const now = new Date();
+  const existing = await db.milestoneActivitiesTracking.findFirst({
+    where: { capExRequestId: capexId, milestoneActivitiesId: activity.id },
+    select: { id: true, status: true },
+  });
+
+  // Only move forward — don't override Completed
+  if (existing?.status === "Completed") return;
+
+  if (existing) {
+    await db.milestoneActivitiesTracking.update({
+      where: { id: existing.id },
+      data: { status: "InProgress", startDate: now, isActive: true, updatedById: userId, updateTime: now },
+    });
+  } else {
+    await db.milestoneActivitiesTracking.create({
+      data: {
+        capExRequestId: capexId,
+        milestoneActivitiesId: activity.id,
+        status: "InProgress",
+        startDate: now,
+        isActive: true,
+        updatedById: userId,
+        updateTime: now,
+      },
+    });
+  }
+}
+
 // ─── Auto-complete a system milestone by partial label match ─────────────────
 
 export async function autoCompleteMilestone(

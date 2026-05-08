@@ -577,7 +577,7 @@ export function newUserEmail(p: NewUserParams) {
   };
 }
 
-// ─── SLA Overdue Reminder ─────────────────────────────────────────────────────
+// ─── SLA Overdue Reminder (legacy — kept for backward compat) ────────────────
 export interface SlaReminderParams {
   to: string;
   assigneeName: string;
@@ -612,6 +612,122 @@ export function slaReminderEmail(p: SlaReminderParams) {
         </td></tr>
       </table>
       <p style="margin:24px 0 0;">${btn("Update Milestone", url, "#dc2626")}</p>`
+    ),
+  };
+}
+
+// ─── SLA Stage Reminder (50% / 75% / Due Today / Overdue) ────────────────────
+const SLA_STAGE_LABELS: Record<string, { label: string; color: string; badge: string }> = {
+  "50":        { label: "50% SLA Elapsed",  color: "#d97706", badge: "#fef3c7" },
+  "75":        { label: "75% SLA Elapsed",  color: "#ea580c", badge: "#ffedd5" },
+  "due_today": { label: "Due Today",         color: "#dc2626", badge: "#fee2e2" },
+  "overdue":   { label: "Overdue",           color: "#dc2626", badge: "#fee2e2" },
+};
+
+export interface SlaStageReminderParams {
+  to: string;
+  cc?: string | string[];
+  assigneeName: string;
+  milestoneLabel: string;
+  phaseName: string;
+  projectName: string;
+  projectNumber: string;
+  prjId: string;
+  phaseNumber: number;
+  assignedDate: string;
+  plannedEndDate: string;
+  remainingDays: number;
+  currentStatus: string;
+  slaPercentage: number;
+  stage: "50" | "75" | "due_today" | "overdue";
+}
+
+export function slaStageReminderEmail(p: SlaStageReminderParams) {
+  const url = `${BASE_URL}/projects/${p.prjId}/milestones/phase-${p.phaseNumber}`;
+  const { label, color, badge } = SLA_STAGE_LABELS[p.stage] ?? SLA_STAGE_LABELS["overdue"];
+  const remainingText =
+    p.remainingDays > 0
+      ? `${p.remainingDays} day${p.remainingDays === 1 ? "" : "s"} remaining`
+      : p.remainingDays === 0
+      ? "Due today"
+      : `${Math.abs(p.remainingDays)} day${Math.abs(p.remainingDays) === 1 ? "" : "s"} overdue`;
+  const subjectPrefix =
+    p.stage === "overdue" ? "OVERDUE" : p.stage === "due_today" ? "DUE TODAY" : `SLA ${p.stage}%`;
+
+  return {
+    to: p.to,
+    cc: p.cc,
+    subject: `[${subjectPrefix}] Milestone SLA Alert — ${p.projectNumber}`,
+    html: wrap(
+      `Milestone SLA Alert — ${p.projectNumber}`,
+      `<div style="background:${badge};border-left:4px solid ${color};padding:12px 16px;border-radius:4px;margin-bottom:20px;">
+        <span style="color:${color};font-weight:700;font-size:14px;">&#9888; ${label}</span>
+      </div>
+      <h2 style="margin:0 0 8px;color:#0f1e35;font-size:20px;">Milestone SLA Notification</h2>
+      <p style="color:#475569;font-size:14px;line-height:1.6;">Hi ${p.assigneeName}, this is an automated SLA reminder for a milestone assigned to you.</p>
+      <table cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;">
+        ${sectionHeader("Project Details")}
+        ${field("Project Number", p.projectNumber)}
+        ${field("Project Name", p.projectName)}
+        ${sectionHeader("Milestone Details")}
+        ${field("Milestone", p.milestoneLabel)}
+        ${field("Phase", p.phaseName)}
+        ${field("Current Status", p.currentStatus)}
+        ${field("Assigned Date", p.assignedDate)}
+        ${field("Planned End Date", p.plannedEndDate)}
+        ${field("Remaining Days", remainingText)}
+        ${field("SLA Completion", `${p.slaPercentage}%`)}
+      </table>
+      <p style="color:#64748b;font-size:13px;margin-bottom:16px;">Please update the milestone status or take action as needed.</p>
+      <p style="margin:0;">${btn("View Milestone", url, color)}</p>`
+    ),
+  };
+}
+
+// ─── Escalation Email (1 / 3 / 5 days overdue → leadership) ──────────────────
+export interface EscalationEmailParams {
+  to: string | string[];
+  cc?: string | string[];
+  milestoneLabel: string;
+  phaseName: string;
+  projectName: string;
+  projectNumber: string;
+  prjId: string;
+  phaseNumber: number;
+  assigneeName: string;
+  assignedDate: string;
+  plannedEndDate: string;
+  daysOverdue: number;
+  currentStatus: string;
+}
+
+export function escalationEmail(p: EscalationEmailParams) {
+  const url = `${BASE_URL}/projects/${p.prjId}/milestones/phase-${p.phaseNumber}`;
+  return {
+    to: p.to,
+    cc: p.cc,
+    subject: `[ESCALATION] Milestone ${p.daysOverdue} Day${p.daysOverdue === 1 ? "" : "s"} Overdue — ${p.projectNumber}`,
+    html: wrap(
+      `Milestone Escalation — ${p.projectNumber}`,
+      `<div style="background:#fee2e2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;margin-bottom:20px;">
+        <span style="color:#dc2626;font-weight:700;font-size:14px;">&#9888; ESCALATION — ${p.daysOverdue} Day${p.daysOverdue === 1 ? "" : "s"} Overdue</span>
+      </div>
+      <h2 style="margin:0 0 8px;color:#0f1e35;font-size:20px;">Milestone Overdue — Escalation Required</h2>
+      <p style="color:#475569;font-size:14px;line-height:1.6;">This is an escalation notification. The following milestone has not been completed and is <strong style="color:#dc2626;">${p.daysOverdue} day${p.daysOverdue === 1 ? "" : "s"} overdue</strong>. Immediate action is required.</p>
+      <table cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;">
+        ${sectionHeader("Project Details")}
+        ${field("Project Number", p.projectNumber)}
+        ${field("Project Name", p.projectName)}
+        ${sectionHeader("Overdue Milestone")}
+        ${field("Milestone", p.milestoneLabel)}
+        ${field("Phase", p.phaseName)}
+        ${field("Assigned To", p.assigneeName)}
+        ${field("Assigned Date", p.assignedDate)}
+        ${field("Planned End Date", p.plannedEndDate)}
+        ${field("Days Overdue", String(p.daysOverdue))}
+        ${field("Current Status", p.currentStatus)}
+      </table>
+      <p style="margin:0;">${btn("View Milestone", url, "#dc2626")}</p>`
     ),
   };
 }

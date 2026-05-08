@@ -3,7 +3,7 @@ import { db } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendEmail } from "@/lib/email/mailer";
 import { functionalAssignmentEmail } from "@/lib/email/templates";
-import { autoCompleteMilestone } from "@/lib/milestones";
+import { autoStartMilestone } from "@/lib/milestones";
 
 async function getCapexId(prjId: string) {
   const c = await db.capexRequest.findFirst({
@@ -105,14 +105,15 @@ export async function PUT(
     }
   }
 
-  // Auto-complete ROM milestones for newly assigned sections
+  // Start ROM milestones (InProgress) when a section is selected in BPM.
+  // Completion happens later when leadership approves in section-details.
   if (capexId) {
-    if (body.isIt && body.itPmId)
-      await autoCompleteMilestone(capexId, params.prjId, "Approved – IT", userId);
-    if (body.isFacilities && body.facilitiesPmId)
-      await autoCompleteMilestone(capexId, params.prjId, "Approved – Facilities", userId);
-    if (body.isPhysicalSecurity && body.physicalSecurityPmId)
-      await autoCompleteMilestone(capexId, params.prjId, "Approved – Security", userId);
+    if (body.isIt)
+      await autoStartMilestone(capexId, params.prjId, "ROM Initiated & Approved – IT", userId);
+    if (body.isFacilities)
+      await autoStartMilestone(capexId, params.prjId, "ROM Initiated & Approved – Facilities", userId);
+    if (body.isPhysicalSecurity)
+      await autoStartMilestone(capexId, params.prjId, "ROM Initiated & Approved – Security", userId);
   }
 
   return Response.json(bpm);

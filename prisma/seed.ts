@@ -35,7 +35,15 @@ const CAPEX_SUB_CLASSIFICATIONS = [
 ];
 
 const PROJECT_TYPES = [
-  "NewLogo", "Expansion", "Refresh", "Relocation", "Compliance", "Technology",
+  "NewLogo",
+  "NewLOB",
+  "RampExistingLOB",
+  "SeasonalRamp",
+  "SiteBuildExpansion",
+  "ClientRetention",
+  "Internal",
+  "Operations",
+  "Others",
 ];
 
 const MILESTONE_ACTIVITIES = [

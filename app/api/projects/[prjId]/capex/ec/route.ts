@@ -2,8 +2,27 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendEmail } from "@/lib/email/mailer";
-import { ecAssignedEmail } from "@/lib/email/templates";
+import { ecAssignedEmail, capexIdGeneratedEmail } from "@/lib/email/templates";
 import { autoCompleteMilestone } from "@/lib/milestones";
+import { generateCapExId } from "@/lib/edl-api/mock";
+
+const EC_THRESHOLD = 25_000;
+
+async function getGrandTotalForCapex(capexId: string): Promise<number> {
+  const sd = await db.capexSectionDetails.findUnique({
+    where: { capExRequestId: capexId },
+    select: {
+      infrastructureCostTotal: true, eusCostTotal: true, capitalLaborCostTotal: true,
+      construction: true, electricalCabling: true, furnitureFixture: true,
+      others: true, tenantImprovementAllowance: true, securityTotal: true,
+    },
+  });
+  if (!sd) return 0;
+  const n = (v: unknown) => Number(v) || 0;
+  return n(sd.infrastructureCostTotal) + n(sd.eusCostTotal) + n(sd.capitalLaborCostTotal) +
+    n(sd.construction) + n(sd.electricalCabling) + n(sd.furnitureFixture) +
+    n(sd.others) + n(sd.tenantImprovementAllowance) + n(sd.securityTotal);
+}
 
 async function getCapexId(prjId: string) {
   const c = await db.capexRequest.findFirst({
@@ -193,7 +212,7 @@ export async function PUT(
     include: { user: { select: { id: true, name: true, email: true } } },
   });
 
-  // Auto-complete EC Committee Approval milestone when all members have approved
+  // Auto-complete EC Committee Approval + auto-generate CapEx ID when all members approved
   if (data.status === "Approved") {
     const allMembers = await db.executiveCommitteeMember.findMany({
       where: { capExRequestId: member.capExRequestId },
@@ -203,15 +222,75 @@ export async function PUT(
     if (allApproved) {
       const capexReq = await db.capexRequest.findUnique({
         where: { id: member.capExRequestId },
-        select: { projectId: true },
+        include: {
+          project: { select: { id: true, name: true, prjNumber: true } },
+          projectManager: { select: { email: true } },
+          businessRequester: { select: { email: true } },
+          businessPm: { select: { itPmId: true, facilitiesPmId: true } },
+          relatedCapex: { select: { capExNo: true } },
+          financeApproval: { select: { projectCapex: true } },
+        },
       });
-      if (capexReq?.projectId) {
+
+      if (capexReq?.project?.id) {
         await autoCompleteMilestone(
           member.capExRequestId,
-          capexReq.projectId,
+          capexReq.project.id,
           "EC Committee Approval",
           undefined
         );
+
+        // Only auto-generate CapEx ID when amount > $25K (EC path) and not already generated
+        const grandTotal = await getGrandTotalForCapex(member.capExRequestId);
+        if (grandTotal > EC_THRESHOLD && !capexReq.financeApproval?.projectCapex) {
+          const generatedId = generateCapExId(capexReq.project.prjNumber);
+
+          await db.capexFinanceApproval.upsert({
+            where: { capExRequestId: member.capExRequestId },
+            create: { capExRequestId: member.capExRequestId, projectCapex: generatedId },
+            update: { projectCapex: generatedId },
+          });
+
+          await autoCompleteMilestone(
+            member.capExRequestId,
+            capexReq.project.id,
+            "CAPEX ID Generated",
+            undefined
+          );
+
+          // Notify recipients
+          const functionalLeaders = await db.user.findMany({
+            where: {
+              isActive: true,
+              userRoles: { some: { role: { name: { in: ["IT Manager", "Facilities Manager", "Security Manager"] } } } },
+            },
+            select: { email: true },
+          });
+          const pmIds = [capexReq.businessPm?.itPmId, capexReq.businessPm?.facilitiesPmId].filter(Boolean) as string[];
+          const pmUsers = pmIds.length
+            ? await db.user.findMany({ where: { id: { in: pmIds }, isActive: true }, select: { email: true } })
+            : [];
+
+          const toSet = new Set<string>();
+          if (capexReq.businessRequester?.email) toSet.add(capexReq.businessRequester.email);
+          if (capexReq.projectManager?.email) toSet.add(capexReq.projectManager.email);
+          pmUsers.forEach((u) => toSet.add(u.email));
+          functionalLeaders.forEach((u) => u.email && toSet.add(u.email));
+
+          if (toSet.size > 0) {
+            sendEmail(
+              capexIdGeneratedEmail({
+                to: Array.from(toSet),
+                capexId: generatedId,
+                projectName: capexReq.project.name,
+                projectNumber: capexReq.project.prjNumber,
+                prjId: capexReq.project.id,
+                generatedDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+                relatedCapexIds: capexReq.relatedCapex?.map((r) => r.capExNo).filter((id): id is string => id !== null) ?? [],
+              })
+            ).catch(() => {});
+          }
+        }
       }
     }
   }

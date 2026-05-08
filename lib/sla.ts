@@ -22,6 +22,58 @@ export function addSLADays(date: Date, days: number, dayType: string | null): Da
 }
 
 export type RiskStatus = "On Time" | "On Risk" | "Delayed";
+export type SLAStage = "50" | "75" | "due_today" | "overdue";
+
+/**
+ * Determines which SLA notification stage a milestone has reached.
+ * Uses dueDate (startDate + SLA days) as the SLA deadline.
+ * Returns null when no stage threshold has been crossed yet.
+ */
+export function getSLAStage(
+  startDate: Date | null,
+  dueDate: Date | null
+): SLAStage | null {
+  if (!startDate || !dueDate) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+
+  if (today > due) return "overdue";
+  if (today.getTime() === due.getTime()) return "due_today";
+
+  const totalMs = due.getTime() - start.getTime();
+  if (totalMs <= 0) return null;
+
+  const elapsedPct = ((today.getTime() - start.getTime()) / totalMs) * 100;
+
+  if (elapsedPct >= 75) return "75";
+  if (elapsedPct >= 50) return "50";
+
+  return null;
+}
+
+/** Returns how far through the SLA period we are (0–100, capped). */
+export function calculateSLAPercentage(startDate: Date, dueDate: Date): number {
+  const total = dueDate.getTime() - startDate.getTime();
+  if (total <= 0) return 100;
+  const elapsed = Date.now() - startDate.getTime();
+  return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+}
+
+/** Returns days remaining until plannedEndDate (negative when overdue). */
+export function getRemainingDays(plannedEndDate: Date): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const planned = new Date(plannedEndDate);
+  planned.setHours(0, 0, 0, 0);
+  return Math.round((planned.getTime() - today.getTime()) / 86_400_000);
+}
 
 export function getRiskStatus(
   dueDate: string | null,
